@@ -74,6 +74,8 @@ export interface StudentDoc {
   fullName: string;
   email: string;
   phone?: string;
+  /** Optional for legacy records; new student records always store a supported ISO currency code. */
+  currency?: string;
   track: string;
   level: string;
   points: number;

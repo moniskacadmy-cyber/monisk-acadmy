@@ -12,6 +12,7 @@ import {
   assertCanToggleMemberStatus,
   assertCanUpdatePermissions,
   canReadStudentRecord,
+  isValidAcademyId,
 } from '../src/shared/policy';
 import type { ActorContext, StudentDoc } from '../src/shared/types';
 
@@ -94,6 +95,14 @@ const studentOwnedByTeacherB: StudentDoc = {
   teacherUids: ['teacher_b'],
   parentUids: ['parent_b_uid'],
 };
+
+describe('Academy identifier validation', () => {
+  it('accepts the approved dotted academy id but keeps document ids strict', () => {
+    expect(isValidAcademyId('monisak.acadmy')).toBe(true);
+    expect(isValidAcademyId('acad_1')).toBe(true);
+    expect(isValidAcademyId('../admin')).toBe(false);
+  });
+});
 
 describe('Mandatory RBAC & Tenant Isolation Policy Suite', () => {
   it('1. User without academyId is rejected and sees nothing', () => {

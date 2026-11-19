@@ -9,7 +9,443 @@ service cloud.firestore {
 
     // 2. Primitive Helpers
     function isValidId(id) {
-      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_.\\-]+;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function belongsToAcademy(academyId) {
+      return isSignedIn()
+        && request.auth.token.academyId is string
+        && request.auth.token.academyId == academyId
+        && request.auth.token.status == 'active';
+    }
+
+    // Synchronous Master Gate against member document (used on get and client writes, never on list)
+    function isActiveMember(academyId) {
+      return belongsToAcademy(academyId)
+        && exists(/databases/$(database)/documents/academies/$(academyId)/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/academies/$(academyId)/members/$(request.auth.uid)).data.status == 'active';
+    }
+
+    function isOwner(academyId) {
+      return belongsToAcademy(academyId) && request.auth.token.role == 'owner';
+    }
+
+    function isSupervisor(academyId) {
+      return belongsToAcademy(academyId) && request.auth.token.role == 'supervisor';
+    }
+
+    function hasPerm(academyId, perm) {
+      return isOwner(academyId)
+        || (isSupervisor(academyId)
+            && request.auth.token.perms is list
+            && perm in request.auth.token.perms);
+    }
+
+    function isTeacher(academyId) {
+      return belongsToAcademy(academyId) && request.auth.token.role == 'teacher';
+    }
+
+    function isStudentRole(academyId) {
+      return belongsToAcademy(academyId) && request.auth.token.role == 'student';
+    }
+
+    function isParentRole(academyId) {
+      return belongsToAcademy(academyId) && request.auth.token.role == 'parent';
+    }
+
+    // 3. Validation Blueprints
+    function isValidMessage(data, academyId, conversationId) {
+      return data.keys().hasAll(['id', 'academyId', 'conversationId', 'participantUids', 'senderUid', 'senderName', 'senderRole', 'text', 'createdAt'])
+        && data.keys().hasOnly(['id', 'academyId', 'conversationId', 'participantUids', 'senderUid', 'senderName', 'senderRole', 'text', 'attachmentUrl', 'attachmentName', 'createdAt'])
+        && isValidId(data.id)
+        && data.academyId == academyId
+        && data.conversationId == conversationId
+        && data.participantUids is list
+        && data.participantUids.size() >= 1
+        && data.participantUids.size() <= 50
+        && request.auth.uid in data.participantUids
+        && data.senderUid == request.auth.uid
+        && data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 120
+        && data.senderRole is string && data.senderRole == request.auth.token.role
+        && data.text is string && data.text.size() >= 1 && data.text.size() <= 2000
+        && data.createdAt is string && data.createdAt.size() <= 64
+        && (!('attachmentUrl' in data) || (data.attachmentUrl is string && data.attachmentUrl.size() <= 1000))
+        && (!('attachmentName' in data) || (data.attachmentName is string && data.attachmentName.size() <= 200));
+    }
+
+    function isValidNotificationReadUpdate(data) {
+      return data.keys().hasAll(['academyId', 'recipientUids', 'title', 'body', 'category', 'createdBy', 'readBy', 'createdAt'])
+        && data.readBy is list
+        && data.readBy.size() <= 200
+        && request.auth.uid in data.readBy;
+    }
+
+    function isValidFcmToken(data, academyId, uid) {
+      return data.keys().hasAll(['uid', 'academyId', 'token', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'academyId', 'token', 'updatedAt'])
+        && data.uid == uid
+        && data.uid == request.auth.uid
+        && data.academyId == academyId
+        && data.token is string && data.token.size() >= 10 && data.token.size() <= 512
+        && data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    // 4. Academy Root & Subcollections
+    match /academies/{academyId} {
+      allow get: if isValidId(academyId) && isActiveMember(academyId);
+      allow list: if false;
+      allow create, update, delete: if false;
+
+      // Members: server-only writes, strict academy & role read isolation
+      match /members/{uid} {
+        allow get: if isValidId(academyId)
+          && isValidId(uid)
+          && isActiveMember(academyId)
+          && (
+            request.auth.uid == uid
+            || isOwner(academyId)
+            || hasPerm(academyId, 'supervisors')
+            || hasPerm(academyId, 'teachers')
+            || hasPerm(academyId, 'students')
+            || hasPerm(academyId, 'parents')
+            || hasPerm(academyId, 'payroll')
+          );
+        allow list: if isValidId(academyId)
+          && belongsToAcademy(academyId)
+          && existing().academyId == academyId
+          && (
+            isOwner(academyId)
+            || hasPerm(academyId, 'supervisors')
+            || hasPerm(academyId, 'teachers')
+            || hasPerm(academyId, 'students')
+            || hasPerm(academyId, 'parents')
+            || hasPerm(academyId, 'payroll')
+          );
+        allow create, update, delete: if false;
+      }
+
+      // Students: isolated by userId (student), teacherUids (teacher), parentUids (parent), or authorized admin
+      match /students/{studentId} {
+        allow get: if isValidId(academyId)
+          && isValidId(studentId)
+          && isActiveMember(academyId)
+          && (
+            hasPerm(academyId, 'students')
+            || hasPerm(academyId, 'groups')
+            || hasPerm(academyId, 'reports')
+            || hasPerm(academyId, 'parents')
+            || (isTeacher(academyId) && existing().teacherUids is list && request.auth.uid in existing().teacherUids)
+            || (isStudentRole(academyId) && existing().userId == request.auth.uid)
+            || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
+          );
+        allow list: if isValidId(academyId)
+          && belongsToAcademy(academyId)
+          && existing().academyId == academyId
+          && (
+            hasPerm(academyId, 'students')
+            || hasPerm(academyId, 'groups')
+            || hasPerm(academyId, 'reports')
+            || hasPerm(academyId, 'parents')
+            || (isTeacher(academyId) && existing().teacherUids is list && request.auth.uid in existing().teacherUids)
+            || (isStudentRole(academyId) && existing().userId == request.auth.uid)
+            || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
+          );
+        allow create, update, delete: if false;
+      }
+
+      // Groups: teachers only see their own groups; students/parents only see groups linked to them
+      match /groups/{groupId} {
+        allow get: if isValidId(academyId)
+          && isValidId(groupId)
+          && isActiveMember(academyId)
+          && (
+            hasPerm(academyId, 'groups')
+            || hasPerm(academyId, 'students')
+            || hasPerm(academyId, 'reports')
+            || (isTeacher(academyId) && existing().teacherUid == request.auth.uid)
+            || (isStudentRole(academyId) && existing().studentUserIds is list && request.auth.uid in existing().studentUserIds)
+            || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
+          );
+        allow list: if isValidId(academyId)
+          && belongsToAcademy(academyId)
+          && existing().academyId == academyId
+          && (
+            hasPerm(academyId, 'groups')
+            || hasPerm(academyId, 'students')
+            || hasPerm(academyId, 'reports')
+            || (isTeacher(academyId) && existing().teacherUid == request.auth.uid)
+            || (isStudentRole(academyId) && existing().studentUserIds is list && request.auth.uid in existing().studentUserIds)
+            || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
+          );
+        allow create, update, delete: if false;
+      }
+
+      // Sessions
+      match /sessions/{sessionId} {
+        allow get: if isValidId(academyId)
+          && isValidId(sessionId)
+          && isActiveMember(academyId)
+          && (
+            hasPerm(academyId, 'groups')
+            || hasPerm(academyId, 'reports')
+            || (isTeacher(academyId) && existing().teacherUid == request.auth.uid)
+            || (isStudentRole(academyId) && existing().studentUserIds is list && request.auth.uid in existing().studentUserIds)
+            || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
+          );
+        allow list: if isValidId(academyId)
+          && belongsToAcademy(academyId)
+          && existing().academyId == academyId
+          && (
+            hasPerm(academyId, 'groups')
+            || hasPerm(academyId, 'reports')
+            || (isTeacher(academyId) && existing().teacherUid == request.auth.uid)
+            || (isStudentRole(academyId) && existing().studentUserIds is list && request.auth.uid in existing().studentUserIds)
+            || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
+          );
+        allow create, update, delete: if false;
+      }
+
+      // Attendance
+      match /attendance/{attendanceId} {
+        allow get: if isValidId(academyId)
+          && isValidId(attendanceId)
+          && isActiveMember(academyId)
+          && (
+            hasPerm(academyId, 'students')
+            || hasPerm(academyId, 'groups')
+            || hasPerm(academyId, 'reports')
+            || (isTeacher(academyId) && existing().teacherUid == request.auth.uid)
+            || (isStudentRole(academyId) && existing().studentUserId == request.auth.uid)
+            || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
+          );
+        allow list: if isValidId(academyId)
+          && belongsToAcademy(academyId)
+          && existing().academyId == academyId
+          && (
+            hasPerm(academyId, 'students')
+            || hasPerm(academyId, 'groups')
+            || hasPerm(academyId, 'reports')
+            || (isTeacher(academyId) && existing().teacherUid == request.auth.uid)
+            || (isStudentRole(academyId) && existing().studentUserId == request.auth.uid)
+            || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
+          );
+        allow create, update, delete: if false;
+      }
+
+      // Evaluations
+      match /evaluations/{evaluationId} {
+        allow get: if isValidId(academyId)
+          && isValidId(evaluationId)
+          && isActiveMember(academyId)
+          && (
+            hasPerm(academyId, 'students')
+            || hasPerm(academyId, 'groups')
+            || hasPerm(academyId, 'reports')
+            || (isTeacher(academyId) && existing().teacherUid == request.auth.uid)
+            || (isStudentRole(academyId) && existing().studentUserId == request.auth.uid)
+            || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
+          );
+        allow list: if isValidId(academyId)
+          && belongsToAcademy(academyId)
+          && existing().academyId == academyId
+          && (
+            hasPerm(academyId, 'students')
+            || hasPerm(academyId, 'groups')
+            || hasPerm(academyId, 'reports')
+            || (isTeacher(academyId) && existing().teacherUid == request.auth.uid)
+            || (isStudentRole(academyId) && existing().studentUserId == request.auth.uid)
+            || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
+          );
+        allow create, update, delete: if false;
+      }
+
+      // Parent Links: server-only writes; parents cannot self-link
+      match /parentLinks/{linkId} {
+        allow get: if isValidId(academyId)
+          && isValidId(linkId)
+          && isActiveMember(academyId)
+          && (
+            hasPerm(academyId, 'parents')
+            || hasPerm(academyId, 'students')
+            || (isParentRole(academyId) && existing().parentUid == request.auth.uid)
+          );
+        allow list: if isValidId(academyId)
+          && belongsToAcademy(academyId)
+          && existing().academyId == academyId
+          && (
+            hasPerm(academyId, 'parents')
+            || hasPerm(academyId, 'students')
+            || (isParentRole(academyId) && existing().parentUid == request.auth.uid)
+          );
+        allow create, update, delete: if false;
+      }
+
+      // Invoices: owner, finance supervisor, or linked parent (read-only)
+      match /invoices/{invoiceId} {
+        allow get: if isValidId(academyId)
+          && isValidId(invoiceId)
+          && isActiveMember(academyId)
+          && (
+            hasPerm(academyId, 'finance')
+            || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
+          );
+        allow list: if isValidId(academyId)
+          && belongsToAcademy(academyId)
+          && existing().academyId == academyId
+          && (
+            hasPerm(academyId, 'finance')
+            || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
+          );
+        allow create, update, delete: if false;
+      }
+
+      // Payments: owner or finance supervisor only
+      match /payments/{paymentId} {
+        allow get: if isValidId(academyId) && isValidId(paymentId) && isActiveMember(academyId) && hasPerm(academyId, 'finance');
+        allow list: if isValidId(academyId) && belongsToAcademy(academyId) && existing().academyId == academyId && hasPerm(academyId, 'finance');
+        allow create, update, delete: if false;
+      }
+
+      // Payroll: owner or payroll supervisor only (never teachers/students/parents)
+      match /payroll/{payrollId} {
+        allow get: if isValidId(academyId) && isValidId(payrollId) && isActiveMember(academyId) && hasPerm(academyId, 'payroll');
+        allow list: if isValidId(academyId) && belongsToAcademy(academyId) && existing().academyId == academyId && hasPerm(academyId, 'payroll');
+        allow create, update, delete: if false;
+      }
+
+      // CRM Leads: owner or crm supervisor only
+      match /leads/{leadId} {
+        allow get: if isValidId(academyId) && isValidId(leadId) && isActiveMember(academyId) && hasPerm(academyId, 'crm');
+        allow list: if isValidId(academyId) && belongsToAcademy(academyId) && existing().academyId == academyId && hasPerm(academyId, 'crm');
+        allow create, update, delete: if false;
+      }
+
+      // Audit Logs: immutable, server-written, owner read-only
+      match /auditLogs/{logId} {
+        allow get: if isValidId(academyId) && isValidId(logId) && isActiveMember(academyId) && isOwner(academyId);
+        allow list: if isValidId(academyId) && belongsToAcademy(academyId) && existing().academyId == academyId && isOwner(academyId);
+        allow create, update, delete: if false;
+      }
+
+      // Conversations & Messages: strictly scoped to participantUids (zero get() inside allow list)
+      match /conversations/{conversationId} {
+        allow get: if isValidId(academyId)
+          && isValidId(conversationId)
+          && isActiveMember(academyId)
+          && existing().participantUids is list
+          && request.auth.uid in existing().participantUids;
+        allow list: if isValidId(academyId)
+          && belongsToAcademy(academyId)
+          && existing().academyId == academyId
+          && existing().participantUids is list
+          && request.auth.uid in existing().participantUids;
+        allow create, update, delete: if false;
+
+        match /messages/{messageId} {
+          allow get: if isValidId(academyId)
+            && isValidId(conversationId)
+            && isValidId(messageId)
+            && isActiveMember(academyId)
+            && existing().participantUids is list
+            && request.auth.uid in existing().participantUids;
+          allow list: if isValidId(academyId)
+            && isValidId(conversationId)
+            && belongsToAcademy(academyId)
+            && existing().academyId == academyId
+            && existing().participantUids is list
+            && request.auth.uid in existing().participantUids;
+          allow create: if isValidId(academyId)
+            && isValidId(conversationId)
+            && isValidId(messageId)
+            && isVerifiedUser()
+            && isValidMessage(incoming(), academyId, conversationId)
+            && isActiveMember(academyId)
+            && incoming().participantUids == get(/databases/$(database)/documents/academies/$(academyId)/conversations/$(conversationId)).data.participantUids;
+          allow update, delete: if false;
+        }
+      }
+
+      // Notifications
+      match /notifications/{notificationId} {
+        allow get: if isValidId(academyId)
+          && isValidId(notificationId)
+          && isActiveMember(academyId)
+          && existing().recipientUids is list
+          && request.auth.uid in existing().recipientUids;
+        allow list: if isValidId(academyId)
+          && belongsToAcademy(academyId)
+          && existing().academyId == academyId
+          && existing().recipientUids is list
+          && request.auth.uid in existing().recipientUids;
+        allow create, delete: if false;
+        allow update: if isValidId(academyId)
+          && isValidId(notificationId)
+          && isVerifiedUser()
+          && isValidNotificationReadUpdate(incoming())
+          && isActiveMember(academyId)
+          && existing().recipientUids is list
+          && request.auth.uid in existing().recipientUids
+          && incoming().readBy.hasAll(existing().readBy)
+          && incoming().diff(existing()).affectedKeys().hasOnly(['readBy']);
+      }
+
+      // Educational Resources metadata
+      match /resources/{resourceId} {
+        allow get: if isValidId(academyId)
+          && isValidId(resourceId)
+          && isActiveMember(academyId)
+          && (
+            hasPerm(academyId, 'groups')
+            || hasPerm(academyId, 'students')
+            || (isTeacher(academyId) && existing().teacherUid == request.auth.uid)
+            || (isStudentRole(academyId) && existing().studentUserIds is list && request.auth.uid in existing().studentUserIds)
+            || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
+          );
+        allow list: if isValidId(academyId)
+          && belongsToAcademy(academyId)
+          && existing().academyId == academyId
+          && (
+            hasPerm(academyId, 'groups')
+            || hasPerm(academyId, 'students')
+            || (isTeacher(academyId) && existing().teacherUid == request.auth.uid)
+            || (isStudentRole(academyId) && existing().studentUserIds is list && request.auth.uid in existing().studentUserIds)
+            || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
+          );
+        allow create, update, delete: if false;
+      }
+
+      // FCM Tokens (user-owned only)
+      match /fcmTokens/{uid} {
+        allow get: if isValidId(academyId) && isValidId(uid) && isActiveMember(academyId) && request.auth.uid == uid;
+        allow list: if false;
+        allow create, update: if isValidId(academyId)
+          && isValidId(uid)
+          && isVerifiedUser()
+          && request.auth.uid == uid
+          && isValidFcmToken(incoming(), academyId, uid)
+          && isActiveMember(academyId);
+        allow delete: if isValidId(academyId) && isValidId(uid) && isActiveMember(academyId) && request.auth.uid == uid;
+      }
+    }
+  }
+}
+);
     }
 
     function incoming() {

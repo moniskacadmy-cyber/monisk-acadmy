@@ -39,7 +39,7 @@ service cloud.firestore {
         && request.auth.token.status == 'active';
     }
 
-    // Synchronous Master Gate against member document (used on get and client writes, never on list)
+    // Synchronous membership gate for reads and writes; list queries re-check the current member document.
     function isActiveMember(academyId) {
       return belongsToAcademy(academyId)
         && exists(/databases/$(database)/documents/academies/$(academyId)/members/$(request.auth.uid))
@@ -131,7 +131,7 @@ service cloud.firestore {
             || hasPerm(academyId, 'payroll')
           );
         allow list: if isValidAcademyId(academyId)
-          && belongsToAcademy(academyId)
+          && isActiveMember(academyId)
           && existing().academyId == academyId
           && (
             isOwner(academyId)
@@ -159,7 +159,7 @@ service cloud.firestore {
             || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
           );
         allow list: if isValidAcademyId(academyId)
-          && belongsToAcademy(academyId)
+          && isActiveMember(academyId)
           && existing().academyId == academyId
           && (
             hasPerm(academyId, 'students')
@@ -187,7 +187,7 @@ service cloud.firestore {
             || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
           );
         allow list: if isValidAcademyId(academyId)
-          && belongsToAcademy(academyId)
+          && isActiveMember(academyId)
           && existing().academyId == academyId
           && (
             hasPerm(academyId, 'groups')
@@ -213,7 +213,7 @@ service cloud.firestore {
             || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
           );
         allow list: if isValidAcademyId(academyId)
-          && belongsToAcademy(academyId)
+          && isActiveMember(academyId)
           && existing().academyId == academyId
           && (
             hasPerm(academyId, 'groups')
@@ -239,7 +239,7 @@ service cloud.firestore {
             || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
           );
         allow list: if isValidAcademyId(academyId)
-          && belongsToAcademy(academyId)
+          && isActiveMember(academyId)
           && existing().academyId == academyId
           && (
             hasPerm(academyId, 'students')
@@ -266,7 +266,7 @@ service cloud.firestore {
             || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
           );
         allow list: if isValidAcademyId(academyId)
-          && belongsToAcademy(academyId)
+          && isActiveMember(academyId)
           && existing().academyId == academyId
           && (
             hasPerm(academyId, 'students')
@@ -290,7 +290,7 @@ service cloud.firestore {
             || (isParentRole(academyId) && existing().parentUid == request.auth.uid)
           );
         allow list: if isValidAcademyId(academyId)
-          && belongsToAcademy(academyId)
+          && isActiveMember(academyId)
           && existing().academyId == academyId
           && (
             hasPerm(academyId, 'parents')
@@ -310,7 +310,7 @@ service cloud.firestore {
             || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
           );
         allow list: if isValidAcademyId(academyId)
-          && belongsToAcademy(academyId)
+          && isActiveMember(academyId)
           && existing().academyId == academyId
           && (
             hasPerm(academyId, 'finance')
@@ -322,28 +322,28 @@ service cloud.firestore {
       // Payments: owner or finance supervisor only
       match /payments/{paymentId} {
         allow get: if isValidAcademyId(academyId) && isValidId(paymentId) && isActiveMember(academyId) && hasPerm(academyId, 'finance');
-        allow list: if isValidAcademyId(academyId) && belongsToAcademy(academyId) && existing().academyId == academyId && hasPerm(academyId, 'finance');
+        allow list: if isValidAcademyId(academyId) && isActiveMember(academyId) && existing().academyId == academyId && hasPerm(academyId, 'finance');
         allow create, update, delete: if false;
       }
 
       // Payroll: owner or payroll supervisor only (never teachers/students/parents)
       match /payroll/{payrollId} {
         allow get: if isValidAcademyId(academyId) && isValidId(payrollId) && isActiveMember(academyId) && hasPerm(academyId, 'payroll');
-        allow list: if isValidAcademyId(academyId) && belongsToAcademy(academyId) && existing().academyId == academyId && hasPerm(academyId, 'payroll');
+        allow list: if isValidAcademyId(academyId) && isActiveMember(academyId) && existing().academyId == academyId && hasPerm(academyId, 'payroll');
         allow create, update, delete: if false;
       }
 
       // CRM Leads: owner or crm supervisor only
       match /leads/{leadId} {
         allow get: if isValidAcademyId(academyId) && isValidId(leadId) && isActiveMember(academyId) && hasPerm(academyId, 'crm');
-        allow list: if isValidAcademyId(academyId) && belongsToAcademy(academyId) && existing().academyId == academyId && hasPerm(academyId, 'crm');
+        allow list: if isValidAcademyId(academyId) && isActiveMember(academyId) && existing().academyId == academyId && hasPerm(academyId, 'crm');
         allow create, update, delete: if false;
       }
 
       // Audit Logs: immutable, server-written, owner read-only
       match /auditLogs/{logId} {
         allow get: if isValidAcademyId(academyId) && isValidId(logId) && isActiveMember(academyId) && isOwner(academyId);
-        allow list: if isValidAcademyId(academyId) && belongsToAcademy(academyId) && existing().academyId == academyId && isOwner(academyId);
+        allow list: if isValidAcademyId(academyId) && isActiveMember(academyId) && existing().academyId == academyId && isOwner(academyId);
         allow create, update, delete: if false;
       }
 
@@ -355,7 +355,7 @@ service cloud.firestore {
           && existing().participantUids is list
           && request.auth.uid in existing().participantUids;
         allow list: if isValidAcademyId(academyId)
-          && belongsToAcademy(academyId)
+          && isActiveMember(academyId)
           && existing().academyId == academyId
           && existing().participantUids is list
           && request.auth.uid in existing().participantUids;
@@ -370,7 +370,7 @@ service cloud.firestore {
             && request.auth.uid in existing().participantUids;
           allow list: if isValidAcademyId(academyId)
             && isValidId(conversationId)
-            && belongsToAcademy(academyId)
+            && isActiveMember(academyId)
             && existing().academyId == academyId
             && existing().participantUids is list
             && request.auth.uid in existing().participantUids;
@@ -393,7 +393,7 @@ service cloud.firestore {
           && existing().recipientUids is list
           && request.auth.uid in existing().recipientUids;
         allow list: if isValidAcademyId(academyId)
-          && belongsToAcademy(academyId)
+          && isActiveMember(academyId)
           && existing().academyId == academyId
           && existing().recipientUids is list
           && request.auth.uid in existing().recipientUids;
@@ -422,7 +422,7 @@ service cloud.firestore {
             || (isParentRole(academyId) && existing().parentUids is list && request.auth.uid in existing().parentUids)
           );
         allow list: if isValidAcademyId(academyId)
-          && belongsToAcademy(academyId)
+          && isActiveMember(academyId)
           && existing().academyId == academyId
           && (
             hasPerm(academyId, 'groups')

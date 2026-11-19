@@ -45,7 +45,8 @@ export interface AcademyDoc {
   id: string;
   name: string;
   slug: string;
-  currency: string;
+  /** Optional legacy/default currency; student and payroll records carry their own currency. */
+  currency?: string;
   ownerUid: string;
   planStatus: 'active' | 'suspended';
   createdAt: string;

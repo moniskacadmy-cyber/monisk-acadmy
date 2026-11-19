@@ -40,6 +40,9 @@ async function main() {
   if ((user.email || '').toLowerCase() !== EXPECTED_OWNER_EMAIL) {
     throw new Error('رفض التنفيذ: البريد الإلكتروني للحساب غير مطابق.');
   }
+  if (user.disabled) {
+    throw new Error('تم الإيقاف: حساب المدير معطّل في Firebase Authentication.');
+  }
 
   const currentClaims = user.customClaims || {};
   if ('academyId' in currentClaims || 'role' in currentClaims || 'status' in currentClaims) {
@@ -117,9 +120,25 @@ async function main() {
   } catch (error) {
     try {
       await adminDb.runTransaction(async (transaction) => {
-        transaction.delete(auditRef);
-        transaction.delete(memberRef);
-        transaction.delete(academyRef);
+        const [academyAfter, memberAfter, auditAfter] = await Promise.all([
+          transaction.get(academyRef),
+          transaction.get(memberRef),
+          transaction.get(auditRef),
+        ]);
+        const isThisRun = academyAfter.exists
+          && memberAfter.exists
+          && auditAfter.exists
+          && academyAfter.data()?.ownerUid === user.uid
+          && memberAfter.data()?.createdBy === 'CLOUD_SHELL_FIRST_OWNER_BOOTSTRAP'
+          && auditAfter.data()?.action === 'BOOTSTRAPPED_EXISTING_OWNER'
+          && auditAfter.data()?.actorUid === user.uid;
+        if (isThisRun) {
+          transaction.delete(auditRef);
+          transaction.delete(memberRef);
+          transaction.delete(academyRef);
+        } else {
+          throw new Error('لم يتم التراجع تلقائيًا لأن بيانات Firestore لم تعد تطابق ما أنشأته هذه المحاولة.');
+        }
       });
     } catch (cleanupError) {
       console.error('تنبيه مهم: فشل تعيين الصلاحيات وفشل التراجع عن مستندات التأسيس؛ يلزم فحص يدوي.', cleanupError);

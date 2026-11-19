@@ -20,6 +20,11 @@ export class PolicyError extends Error {
 }
 
 export const SAFE_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
+export const SAFE_ACADEMY_ID_REGEX = /^[a-zA-Z0-9._-]{1,128}$/;
+
+export function isValidAcademyId(id: unknown): id is string {
+  return typeof id === 'string' && SAFE_ACADEMY_ID_REGEX.test(id);
+}
 
 export function isValidDocumentId(id: unknown): id is string {
   return typeof id === 'string' && SAFE_ID_REGEX.test(id);
@@ -41,7 +46,7 @@ export function assertActiveActor(actor: ActorContext | null | undefined): asser
   if (!actor || !actor.uid) {
     throw new PolicyError('يجب تسجيل الدخول أولًا.', 401, 'UNAUTHENTICATED');
   }
-  if (!isValidDocumentId(actor.academyId)) {
+  if (!isValidAcademyId(actor.academyId)) {
     throw new PolicyError('الحساب غير مرتبط بأي أكاديمية صالحة.', 403, 'NO_ACADEMY');
   }
   if (actor.status !== 'active') {

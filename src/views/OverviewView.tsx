@@ -21,8 +21,19 @@ export function OverviewView({ data, onNavigate }: OverviewViewProps) {
 
   const activeStudents = data.students.filter((s) => s.status === 'active');
   const activeGroups = data.groups.filter((g) => g.status === 'active');
-  const totalInvoices = data.invoices.reduce((sum, inv) => sum + (inv.amount || 0), 0);
-  const totalPaid = data.invoices.reduce((sum, inv) => sum + (inv.paidAmount || 0), 0);
+  const invoiceTotalsByCurrency = new Map<string, { amount: number; paid: number }>();
+  for (const invoice of data.invoices) {
+    const currency = invoice.currency || academy?.currency || 'EGP';
+    const totals = invoiceTotalsByCurrency.get(currency) || { amount: 0, paid: 0 };
+    totals.amount += invoice.amount || 0;
+    totals.paid += invoice.paidAmount || 0;
+    invoiceTotalsByCurrency.set(currency, totals);
+  }
+  const financeSummary = invoiceTotalsByCurrency.size
+    ? Array.from(invoiceTotalsByCurrency.entries())
+        .map(([currency, totals]) => `${formatCurrency(totals.paid, currency)} / ${formatCurrency(totals.amount, currency)}`)
+        .join(' · ')
+    : `${formatCurrency(0, academy?.currency || 'EGP')} / ${formatCurrency(0, academy?.currency || 'EGP')}`;
 
   const canSeeFinance = actor.role === 'owner' || hasSupervisorPerm(actor, 'finance');
 
@@ -123,9 +134,7 @@ export function OverviewView({ data, onNavigate }: OverviewViewProps) {
             )}
           </div>
           <p className="mt-3 font-display text-2xl font-bold text-slate-900 tabular-nums dark:text-white">
-            {canSeeFinance
-              ? `${formatCurrency(totalPaid, academy?.currency)} / ${formatCurrency(totalInvoices, academy?.currency)}`
-              : data.evaluations.length}
+            {canSeeFinance ? financeSummary : data.evaluations.length}
           </p>
         </div>
       </section>

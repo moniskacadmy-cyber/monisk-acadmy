@@ -190,7 +190,7 @@ describe('Firestore & Storage Rules Static Hardening Verification', () => {
     expect(rulesText).toContain('match /payroll/{payrollId}');
     expect(rulesText).toContain('request.auth.token.academyId == academyId');
     expect(rulesText).toContain('a-zA-Z0-9._');
-    const listRules = rulesText.match(/allow list: if [\\s\\S]*?;/g) || [];
+    const listRules = rulesText.match(/allow list: if [\s\S]*?;/g) || [];
     expect(listRules.length).toBeGreaterThan(0);
     expect(listRules.filter((rule) => !rule.includes('if false;') && !rule.includes('isActiveMember(academyId)'))).toHaveLength(0);
     expect(listRules.some((rule) => rule.includes('belongsToAcademy(academyId)'))).toBe(false);

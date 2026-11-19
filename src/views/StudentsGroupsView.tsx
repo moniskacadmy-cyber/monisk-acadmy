@@ -8,7 +8,7 @@ import { SUPPORTED_CURRENCIES } from '../shared/currency';
 import type { GroupDoc, StudentDoc } from '../shared/types';
 
 export function StudentsGroupsView({ data }: { data: AcademyDataState }) {
-  const { actor } = useAuth();
+  const { actor, academy } = useAuth();
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   // Student form state
@@ -458,7 +458,7 @@ export function StudentsGroupsView({ data }: { data: AcademyDataState }) {
                     <td className="py-3 px-4 text-xs text-slate-700 dark:text-slate-300">
                       {s.track} · {s.level}
                     </td>
-                    <td className="py-3 px-4 text-xs font-mono">{s.currency || 'EGP'}</td>
+                    <td className="py-3 px-4 text-xs font-mono">{s.currency || academy?.currency || 'EGP'}</td>
                     <td className="py-3 px-4 font-mono text-sm font-semibold text-teal-700 tabular-nums dark:text-teal-400">
                       {s.points || 0}
                     </td>
@@ -476,7 +476,7 @@ export function StudentsGroupsView({ data }: { data: AcademyDataState }) {
                               setEditingStudent(s);
                               setFullName(s.fullName);
                               setStudentPhone(s.phone || '');
-                              setStudentCurrency(s.currency || 'EGP');
+                              setStudentCurrency(s.currency || academy?.currency || 'EGP');
                               setTrack(s.track);
                               setLevel(s.level);
                             }}

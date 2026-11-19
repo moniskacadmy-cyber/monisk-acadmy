@@ -10,6 +10,7 @@ import {
   formatDateArabic,
 } from '../shared/labels';
 import { hasSupervisorPerm } from '../shared/policy';
+import { SUPPORTED_CURRENCIES } from '../shared/currency';
 
 export function FinancePayrollView({ data }: { data: AcademyDataState }) {
   const { actor, academy } = useAuth();
@@ -32,12 +33,13 @@ export function FinancePayrollView({ data }: { data: AcademyDataState }) {
   const [baseAmount, setBaseAmount] = useState(2500);
   const [bonusAmount, setBonusAmount] = useState(0);
   const [deductionAmount, setDeductionAmount] = useState(0);
+  const [payrollCurrency, setPayrollCurrency] = useState(academy?.currency || 'EGP');
 
   if (!actor) return null;
 
   const canFinance = actor.role === 'owner' || hasSupervisorPerm(actor, 'finance');
   const canPayroll = actor.role === 'owner' || hasSupervisorPerm(actor, 'payroll');
-  const currency = academy?.currency || 'SAR';
+  const selectedInvoiceStudent = data.students.find((student) => student.id === invStudentId);
 
   const handleCreateInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,7 +49,6 @@ export function FinancePayrollView({ data }: { data: AcademyDataState }) {
         studentId: invStudentId,
         title: invTitle,
         amount: invAmount,
-        currency,
         dueDate: invDueDate,
       });
       setFeedback({ type: 'ok', text: 'تم إصدار الفاتورة وحفظها في Firestore.' });
@@ -81,7 +82,7 @@ export function FinancePayrollView({ data }: { data: AcademyDataState }) {
         baseAmount,
         bonusAmount,
         deductionAmount,
-        currency,
+        currency: payrollCurrency,
         status: 'approved',
       });
       setFeedback({ type: 'ok', text: 'تم اعتماد كشف الراتب وحفظه في سجل الرواتب.' });
@@ -132,6 +133,11 @@ export function FinancePayrollView({ data }: { data: AcademyDataState }) {
                   </option>
                 ))}
               </select>
+              {selectedInvoiceStudent && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  عملة الفاتورة: {selectedInvoiceStudent.currency || academy?.currency || 'EGP'} (حسب ملف الطالب)
+                </p>
+              )}
               <input
                 type="text"
                 required
@@ -314,6 +320,15 @@ export function FinancePayrollView({ data }: { data: AcademyDataState }) {
               placeholder="خصم"
               className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums dark:border-slate-700 dark:bg-slate-950"
             />
+            <select
+              value={payrollCurrency}
+              onChange={(e) => setPayrollCurrency(e.target.value)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+            >
+              {SUPPORTED_CURRENCIES.map((currency) => (
+                <option key={currency.code} value={currency.code}>{currency.label}</option>
+              ))}
+            </select>
             <button
               type="submit"
               className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800"

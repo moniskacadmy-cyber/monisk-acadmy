@@ -12,6 +12,7 @@ import {
   isValidDocumentId,
   sanitizePermissions,
 } from '../shared/policy';
+import { isSupportedCurrency } from '../shared/currency';
 import type {
   AcademyRole,
   GroupDoc,
@@ -52,6 +53,10 @@ export async function handleCreateMember(req: ApiRequest, res: ApiResponse): Pro
     const requestedPerms = sanitizePermissions(body.perms);
     const track = str(body.track, 100) || 'القرآن الكريم';
     const level = str(body.level, 100) || 'المستوى التمهيدي';
+    const studentCurrency = body.currency === undefined ? 'EGP' : body.currency;
+    if (role === 'student' && !isSupportedCurrency(studentCurrency)) {
+      throw new PolicyError('عملة الطالب غير مدعومة.', 400, 'INVALID_CURRENCY');
+    }
 
     if (name.length < 2) {
       throw new PolicyError('يرجى إدخال الاسم الكامل (حرفان على الأقل).', 400, 'INVALID_NAME');
@@ -112,6 +117,7 @@ export async function handleCreateMember(req: ApiRequest, res: ApiResponse): Pro
         fullName: name,
         email,
         ...(phone ? { phone } : {}),
+        currency: studentCurrency,
         track,
         level,
         points: 0,
@@ -253,6 +259,10 @@ export async function handleUpsertStudent(req: ApiRequest, res: ApiResponse): Pr
     const phone = str(body.phone, 40);
     const track = str(body.track, 100) || 'القرآن الكريم';
     const level = str(body.level, 100) || 'المستوى الأول';
+    const currency = body.currency === undefined ? 'EGP' : body.currency;
+    if (!isSupportedCurrency(currency)) {
+      throw new PolicyError('عملة الطالب غير مدعومة.', 400, 'INVALID_CURRENCY');
+    }
     const status = body.status === 'archived' ? 'archived' : 'active';
 
     if (fullName.length < 2) {
@@ -275,6 +285,7 @@ export async function handleUpsertStudent(req: ApiRequest, res: ApiResponse): Pr
         fullName,
         ...(email ? { email } : {}),
         phone,
+        currency,
         track,
         level,
         status,
@@ -341,6 +352,7 @@ export async function handleUpsertStudent(req: ApiRequest, res: ApiResponse): Pr
       fullName,
       email,
       ...(phone ? { phone } : {}),
+      currency,
       track,
       level,
       points: 0,
@@ -826,7 +838,6 @@ export async function handleCreateInvoice(req: ApiRequest, res: ApiResponse): Pr
     const studentId = str(body.studentId, 128);
     const title = str(body.title, 160);
     const amount = num(body.amount, 0);
-    const currency = str(body.currency, 12) || 'SAR';
     const dueDate = str(body.dueDate, 40) || new Date().toISOString().slice(0, 10);
 
     if (!isValidDocumentId(studentId) || title.length < 2 || amount <= 0) {
@@ -838,6 +849,13 @@ export async function handleCreateInvoice(req: ApiRequest, res: ApiResponse): Pr
       throw new PolicyError('الطالب غير موجود.', 404, 'STUDENT_NOT_FOUND');
     }
     const student = studentSnap.data() as StudentDoc;
+    const academySnap = await academyRef(actor.academyId).get();
+    const academyCurrency = academySnap.exists ? academySnap.get('currency') : undefined;
+    const currency = isSupportedCurrency(student.currency)
+      ? student.currency
+      : isSupportedCurrency(academyCurrency)
+        ? academyCurrency
+        : 'EGP';
 
     const ref = academyRef(actor.academyId).collection('invoices').doc();
     const now = new Date().toISOString();
@@ -951,7 +969,11 @@ export async function handleCreatePayroll(req: ApiRequest, res: ApiResponse): Pr
     const baseAmount = Math.max(0, num(body.baseAmount, 0));
     const bonusAmount = Math.max(0, num(body.bonusAmount, 0));
     const deductionAmount = Math.max(0, num(body.deductionAmount, 0));
-    const currency = str(body.currency, 12) || 'SAR';
+    const requestedCurrency = body.currency === undefined ? 'EGP' : body.currency;
+    if (!isSupportedCurrency(requestedCurrency)) {
+      throw new PolicyError('عملة الراتب غير مدعومة.', 400, 'INVALID_CURRENCY');
+    }
+    const currency = requestedCurrency;
     const status = ['draft', 'approved', 'paid'].includes(String(body.status))
       ? String(body.status)
       : 'approved';

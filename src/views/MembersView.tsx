@@ -5,6 +5,7 @@ import type { AcademyDataState } from '../hooks/useAcademyData';
 import { callProtectedApi } from '../lib/apiClient';
 import { PERMISSION_LABELS, ROLE_LABELS, formatDateArabic } from '../shared/labels';
 import { hasSupervisorPerm } from '../shared/policy';
+import { SUPPORTED_CURRENCIES } from '../shared/currency';
 import {
   ALL_SUPERVISOR_PERMISSIONS,
   type AcademyRole,
@@ -21,6 +22,7 @@ export function MembersView({ data }: { data: AcademyDataState }) {
   const [role, setRole] = useState<AcademyRole>('teacher');
   const [perms, setPerms] = useState<SupervisorPermission[]>(['students', 'groups']);
   const [track, setTrack] = useState('القرآن الكريم');
+  const [studentCurrency, setStudentCurrency] = useState('EGP');
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
@@ -70,12 +72,14 @@ export function MembersView({ data }: { data: AcademyDataState }) {
         role,
         perms: role === 'supervisor' ? perms : [],
         track,
+        currency: studentCurrency,
       });
       setFeedback({ type: 'ok', text: 'تم إنشاء الحساب وحفظه في Firebase Auth وFirestore بنجاح.' });
       setName('');
       setEmail('');
       setPassword('');
       setPhone('');
+      setStudentCurrency('EGP');
     } catch (err) {
       setFeedback({
         type: 'err',
@@ -265,17 +269,33 @@ export function MembersView({ data }: { data: AcademyDataState }) {
             </div>
 
             {role === 'student' && (
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                  المسار التعليمي
-                </label>
-                <input
-                  type="text"
-                  value={track}
-                  onChange={(e) => setTrack(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
-                />
-              </div>
+              <>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    المسار التعليمي
+                  </label>
+                  <input
+                    type="text"
+                    value={track}
+                    onChange={(e) => setTrack(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    عملة الطالب
+                  </label>
+                  <select
+                    value={studentCurrency}
+                    onChange={(e) => setStudentCurrency(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+                  >
+                    {SUPPORTED_CURRENCIES.map((currency) => (
+                      <option key={currency.code} value={currency.code}>{currency.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
             )}
 
             {role === 'supervisor' && (

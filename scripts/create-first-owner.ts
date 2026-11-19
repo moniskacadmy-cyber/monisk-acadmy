@@ -27,7 +27,7 @@ async function main() {
   if (databaseId !== EXPECTED_DATABASE_ID) {
     throw new Error(`رفض التنفيذ: قاعدة البيانات المحددة ليست قاعدة الأكاديمية المعتمدة (${EXPECTED_DATABASE_ID}).`);
   }
-  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(academyId)) {
+  if (!/^[a-zA-Z0-9._-]{1,128}$/.test(academyId)) {
     throw new Error('معرّف الأكاديمية غير صالح.');
   }
   if (academyName !== 'مؤنسك') {

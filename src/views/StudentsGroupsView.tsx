@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import type { AcademyDataState } from '../hooks/useAcademyData';
 import { callProtectedApi } from '../lib/apiClient';
 import { hasSupervisorPerm } from '../shared/policy';
+import { SUPPORTED_CURRENCIES } from '../shared/currency';
 import type { GroupDoc, StudentDoc } from '../shared/types';
 
 export function StudentsGroupsView({ data }: { data: AcademyDataState }) {
@@ -18,6 +19,7 @@ export function StudentsGroupsView({ data }: { data: AcademyDataState }) {
   const [studentPhone, setStudentPhone] = useState('');
   const [track, setTrack] = useState('القرآن الكريم');
   const [level, setLevel] = useState('المستوى الأول');
+  const [studentCurrency, setStudentCurrency] = useState('EGP');
 
   // Group form state
   const [editingGroup, setEditingGroup] = useState<GroupDoc | null>(null);
@@ -42,6 +44,7 @@ export function StudentsGroupsView({ data }: { data: AcademyDataState }) {
     setStudentPhone('');
     setTrack('القرآن الكريم');
     setLevel('المستوى الأول');
+    setStudentCurrency('EGP');
   };
 
   const resetGroupForm = () => {
@@ -65,6 +68,7 @@ export function StudentsGroupsView({ data }: { data: AcademyDataState }) {
         phone: studentPhone,
         track,
         level,
+        currency: studentCurrency,
       });
       setFeedback({ type: 'ok', text: 'تم حفظ بيانات الطالب في Firestore بنجاح.' });
       resetStudentForm();
@@ -394,6 +398,18 @@ export function StudentsGroupsView({ data }: { data: AcademyDataState }) {
               placeholder="المستوى"
               className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
             />
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">عملة الطالب</label>
+              <select
+                value={studentCurrency}
+                onChange={(e) => setStudentCurrency(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+              >
+                {SUPPORTED_CURRENCIES.map((currency) => (
+                  <option key={currency.code} value={currency.code}>{currency.label}</option>
+                ))}
+              </select>
+            </div>
             <div className="sm:col-span-2 lg:col-span-3">
               <button
                 type="submit"
@@ -424,6 +440,7 @@ export function StudentsGroupsView({ data }: { data: AcademyDataState }) {
                 <tr className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
                   <th className="py-3 pl-4 font-medium">الطالب</th>
                   <th className="py-3 px-4 font-medium">المسار والمستوى</th>
+                  <th className="py-3 px-4 font-medium">العملة</th>
                   <th className="py-3 px-4 font-medium">النقاط</th>
                   <th className="py-3 px-4 font-medium">الحالة</th>
                   {canManageStudents && <th className="py-3 pr-4 font-medium">إجراءات</th>}
@@ -441,6 +458,7 @@ export function StudentsGroupsView({ data }: { data: AcademyDataState }) {
                     <td className="py-3 px-4 text-xs text-slate-700 dark:text-slate-300">
                       {s.track} · {s.level}
                     </td>
+                    <td className="py-3 px-4 text-xs font-mono">{s.currency || 'EGP'}</td>
                     <td className="py-3 px-4 font-mono text-sm font-semibold text-teal-700 tabular-nums dark:text-teal-400">
                       {s.points || 0}
                     </td>
@@ -458,6 +476,7 @@ export function StudentsGroupsView({ data }: { data: AcademyDataState }) {
                               setEditingStudent(s);
                               setFullName(s.fullName);
                               setStudentPhone(s.phone || '');
+                              setStudentCurrency(s.currency || 'EGP');
                               setTrack(s.track);
                               setLevel(s.level);
                             }}

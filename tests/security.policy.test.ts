@@ -192,5 +192,8 @@ describe('Firestore & Storage Rules Static Hardening Verification', () => {
     expect(rulesText).toContain('request.auth.uid in existing().teacherUids');
     expect(rulesText).toContain('existing().userId == request.auth.uid');
     expect(rulesText).toContain('request.auth.uid in existing().parentUids');
+    expect((rulesText.match(/function isValidAcademyId\\(id\\)/g) || []).length).toBe(1);
+    expect(rulesText.trimEnd().endsWith('}')).toBe(true);
+    expect(rulesText).not.toContain("\\n);\\n    }\\n\\n    function isValidAcademyId");
   });
 });

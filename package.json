@@ -13,7 +13,8 @@
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "lint:rules": "eslint firestore.rules",
-    "seed:owner": "tsx scripts/create-first-owner.ts"
+    "seed:owner": "tsx scripts/create-first-owner.ts",
+    "seed:owner:cloudshell": "tsx scripts/bootstrap-existing-owner-cloudshell.ts"
   },
   "dependencies": {
     "@firebase/eslint-plugin-security-rules": "^0.0.2",

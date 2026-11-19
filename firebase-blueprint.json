@@ -1,0 +1,409 @@
+{
+  "entities": {
+    "Academy": {
+      "title": "Academy",
+      "description": "Tenant root document for an educational academy.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "slug": { "type": "string", "maxLength": 120, "pattern": "^[a-z0-9\\-]+$" },
+        "currency": { "type": "string", "maxLength": 12 },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "planStatus": { "type": "string", "enum": ["active", "suspended"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "ownerUid", "planStatus", "createdAt", "updatedAt"]
+    },
+    "Member": {
+      "title": "Member",
+      "description": "Academy member record with role, delegated permissions, and account status.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "academyId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "role": { "type": "string", "enum": ["owner", "supervisor", "teacher", "student", "parent"] },
+        "perms": { "type": "array" },
+        "status": { "type": "string", "enum": ["active", "disabled"] },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "academyId", "name", "email", "role", "perms", "status", "createdAt", "updatedAt"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Student profile bound to userId, assigned teachers, and approved parents.",
+      "type": "object",
+      "properties": {
+        "academyId": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "fullName": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "email": { "type": "string", "maxLength": 200 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "track": { "type": "string", "maxLength": 100 },
+        "level": { "type": "string", "maxLength": 100 },
+        "points": { "type": "number" },
+        "teacherUids": { "type": "array" },
+        "parentUids": { "type": "array" },
+        "groupIds": { "type": "array" },
+        "status": { "type": "string", "enum": ["active", "archived"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["academyId", "userId", "fullName", "email", "teacherUids", "parentUids", "groupIds", "status", "createdAt", "updatedAt"]
+    },
+    "Group": {
+      "title": "Group",
+      "description": "Study circle or class group assigned to a single teacher.",
+      "type": "object",
+      "properties": {
+        "academyId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "subject": { "type": "string", "maxLength": 120 },
+        "teacherUid": { "type": "string", "maxLength": 128 },
+        "teacherName": { "type": "string", "maxLength": 120 },
+        "studentIds": { "type": "array" },
+        "scheduleText": { "type": "string", "maxLength": 200 },
+        "status": { "type": "string", "enum": ["active", "archived"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["academyId", "name", "subject", "teacherUid", "studentIds", "status", "createdAt", "updatedAt"]
+    },
+    "Session": {
+      "title": "Session",
+      "description": "Scheduled or completed teaching session for a group.",
+      "type": "object",
+      "properties": {
+        "academyId": { "type": "string", "maxLength": 128 },
+        "groupId": { "type": "string", "maxLength": 128 },
+        "groupName": { "type": "string", "maxLength": 120 },
+        "teacherUid": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "scheduledDate": { "type": "string", "maxLength": 40 },
+        "durationMinutes": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["scheduled", "completed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["academyId", "groupId", "teacherUid", "title", "scheduledDate", "durationMinutes", "status", "createdAt", "updatedAt"]
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "Student attendance record linked to session, teacher, and parents.",
+      "type": "object",
+      "properties": {
+        "academyId": { "type": "string", "maxLength": 128 },
+        "sessionId": { "type": "string", "maxLength": 128 },
+        "groupId": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentUserId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "teacherUid": { "type": "string", "maxLength": 128 },
+        "parentUids": { "type": "array" },
+        "date": { "type": "string", "maxLength": 40 },
+        "status": { "type": "string", "enum": ["present", "absent", "late", "excused"] },
+        "note": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["academyId", "sessionId", "groupId", "studentId", "studentUserId", "teacherUid", "parentUids", "date", "status", "createdAt", "updatedAt"]
+    },
+    "Evaluation": {
+      "title": "Evaluation",
+      "description": "Quran memorization/lesson evaluation and points awarded.",
+      "type": "object",
+      "properties": {
+        "academyId": { "type": "string", "maxLength": 128 },
+        "groupId": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentUserId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "teacherUid": { "type": "string", "maxLength": 128 },
+        "parentUids": { "type": "array" },
+        "surahOrLesson": { "type": "string", "maxLength": 160 },
+        "memorizationScore": { "type": "number" },
+        "revisionScore": { "type": "number" },
+        "recitationScore": { "type": "number" },
+        "pointsAwarded": { "type": "number" },
+        "certificateTitle": { "type": "string", "maxLength": 160 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "evaluatedAt": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["academyId", "groupId", "studentId", "studentUserId", "teacherUid", "parentUids", "surahOrLesson", "memorizationScore", "revisionScore", "recitationScore", "pointsAwarded", "evaluatedAt", "createdAt"]
+    },
+    "ParentLink": {
+      "title": "ParentLink",
+      "description": "Official admin-approved link between a parent account and a student.",
+      "type": "object",
+      "properties": {
+        "academyId": { "type": "string", "maxLength": 128 },
+        "parentUid": { "type": "string", "maxLength": 128 },
+        "parentName": { "type": "string", "maxLength": 120 },
+        "parentEmail": { "type": "string", "maxLength": 200 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentUserId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "relation": { "type": "string", "maxLength": 60 },
+        "status": { "type": "string", "enum": ["active", "revoked"] },
+        "approvedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["academyId", "parentUid", "studentId", "studentUserId", "status", "approvedBy", "createdAt", "updatedAt"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Tuition invoice visible to finance admins and linked parents.",
+      "type": "object",
+      "properties": {
+        "academyId": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "parentUids": { "type": "array" },
+        "title": { "type": "string", "maxLength": 160 },
+        "amount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 12 },
+        "dueDate": { "type": "string", "maxLength": 40 },
+        "status": { "type": "string", "enum": ["pending", "partial", "paid", "overdue", "cancelled"] },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["academyId", "studentId", "parentUids", "title", "amount", "paidAmount", "currency", "dueDate", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Recorded tuition payment transaction.",
+      "type": "object",
+      "properties": {
+        "academyId": { "type": "string", "maxLength": 128 },
+        "invoiceId": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "amount": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 12 },
+        "method": { "type": "string", "enum": ["cash", "bank_transfer", "card", "online"] },
+        "recordedBy": { "type": "string", "maxLength": 128 },
+        "paidAt": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["academyId", "invoiceId", "studentId", "amount", "currency", "method", "recordedBy", "paidAt", "createdAt"]
+    },
+    "Payroll": {
+      "title": "Payroll",
+      "description": "Staff/teacher payroll record strictly restricted to owner or payroll supervisor.",
+      "type": "object",
+      "properties": {
+        "academyId": { "type": "string", "maxLength": 128 },
+        "memberUid": { "type": "string", "maxLength": 128 },
+        "memberName": { "type": "string", "maxLength": 120 },
+        "role": { "type": "string" },
+        "periodMonth": { "type": "string", "maxLength": 20 },
+        "baseAmount": { "type": "number" },
+        "bonusAmount": { "type": "number" },
+        "deductionAmount": { "type": "number" },
+        "netAmount": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 12 },
+        "status": { "type": "string", "enum": ["draft", "approved", "paid"] },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["academyId", "memberUid", "periodMonth", "netAmount", "currency", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Lead": {
+      "title": "Lead",
+      "description": "CRM enrollment inquiry lead.",
+      "type": "object",
+      "properties": {
+        "academyId": { "type": "string", "maxLength": 128 },
+        "fullName": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "email": { "type": "string", "maxLength": 200 },
+        "interestTrack": { "type": "string", "maxLength": 120 },
+        "source": { "type": "string", "maxLength": 80 },
+        "stage": { "type": "string", "enum": ["new", "contacted", "trial", "enrolled", "lost"] },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["academyId", "fullName", "phone", "stage", "createdBy", "createdAt", "updatedAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable server-written security and activity log.",
+      "type": "object",
+      "properties": {
+        "academyId": { "type": "string", "maxLength": 128 },
+        "actorUid": { "type": "string", "maxLength": 128 },
+        "actorEmail": { "type": "string", "maxLength": 200 },
+        "actorRole": { "type": "string" },
+        "action": { "type": "string", "maxLength": 80 },
+        "targetCollection": { "type": "string", "maxLength": 80 },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "details": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["academyId", "actorUid", "actorRole", "action", "targetCollection", "targetId", "createdAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Scoped messaging thread between specific academy participants.",
+      "type": "object",
+      "properties": {
+        "academyId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 160 },
+        "participantUids": { "type": "array" },
+        "lastMessageText": { "type": "string", "maxLength": 500 },
+        "lastMessageAt": { "type": "string", "maxLength": 40 },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["academyId", "title", "participantUids", "createdBy", "createdAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Message inside a scoped academy conversation.",
+      "type": "object",
+      "properties": {
+        "academyId": { "type": "string", "maxLength": 128 },
+        "conversationId": { "type": "string", "maxLength": 128 },
+        "senderUid": { "type": "string", "maxLength": 128 },
+        "senderName": { "type": "string", "maxLength": 120 },
+        "senderRole": { "type": "string" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["academyId", "conversationId", "senderUid", "senderName", "senderRole", "text", "createdAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "In-app notification record mirrored with FCM.",
+      "type": "object",
+      "properties": {
+        "academyId": { "type": "string", "maxLength": 128 },
+        "recipientUids": { "type": "array" },
+        "title": { "type": "string", "maxLength": 160 },
+        "body": { "type": "string", "maxLength": 600 },
+        "category": { "type": "string", "enum": ["session", "evaluation", "finance", "system", "message"] },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "readBy": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["academyId", "recipientUids", "title", "body", "category", "createdBy", "readBy", "createdAt"]
+    },
+    "ResourceFile": {
+      "title": "ResourceFile",
+      "description": "Metadata for educational attachments stored in Firebase Storage.",
+      "type": "object",
+      "properties": {
+        "academyId": { "type": "string", "maxLength": 128 },
+        "groupId": { "type": "string", "maxLength": 128 },
+        "teacherUid": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 160 },
+        "fileName": { "type": "string", "maxLength": 200 },
+        "storagePath": { "type": "string", "maxLength": 400 },
+        "downloadUrl": { "type": "string", "maxLength": 1000 },
+        "sizeBytes": { "type": "number" },
+        "contentType": { "type": "string", "maxLength": 120 },
+        "uploadedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["academyId", "groupId", "teacherUid", "title", "fileName", "storagePath", "downloadUrl", "uploadedBy", "createdAt"]
+    },
+    "FcmToken": {
+      "title": "FcmToken",
+      "description": "User-owned FCM registration token document.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "academyId": { "type": "string", "maxLength": 128 },
+        "token": { "type": "string", "maxLength": 512 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "academyId", "token", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/academies/{academyId}": {
+      "schema": { "$ref": "#/entities/Academy" },
+      "description": "Root academy tenant metadata."
+    },
+    "/academies/{academyId}/members/{uid}": {
+      "schema": { "$ref": "#/entities/Member" },
+      "description": "Academy member profiles, roles, permissions, and active/disabled status."
+    },
+    "/academies/{academyId}/students/{studentId}": {
+      "schema": { "$ref": "#/entities/Student" },
+      "description": "Students isolated by teacherUids, parentUids, and userId."
+    },
+    "/academies/{academyId}/groups/{groupId}": {
+      "schema": { "$ref": "#/entities/Group" },
+      "description": "Study circles/groups assigned to teachers and students."
+    },
+    "/academies/{academyId}/sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/Session" },
+      "description": "Scheduled and completed sessions."
+    },
+    "/academies/{academyId}/attendance/{attendanceId}": {
+      "schema": { "$ref": "#/entities/Attendance" },
+      "description": "Attendance logs per session and student."
+    },
+    "/academies/{academyId}/evaluations/{evaluationId}": {
+      "schema": { "$ref": "#/entities/Evaluation" },
+      "description": "Student memorization, revision, recitation evaluations and certificates."
+    },
+    "/academies/{academyId}/parentLinks/{linkId}": {
+      "schema": { "$ref": "#/entities/ParentLink" },
+      "description": "Admin-approved parent-student links."
+    },
+    "/academies/{academyId}/invoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/Invoice" },
+      "description": "Student fee invoices."
+    },
+    "/academies/{academyId}/payments/{paymentId}": {
+      "schema": { "$ref": "#/entities/Payment" },
+      "description": "Payment receipts."
+    },
+    "/academies/{academyId}/payroll/{payrollId}": {
+      "schema": { "$ref": "#/entities/Payroll" },
+      "description": "Staff and teacher payroll records."
+    },
+    "/academies/{academyId}/leads/{leadId}": {
+      "schema": { "$ref": "#/entities/Lead" },
+      "description": "Enrollment CRM leads."
+    },
+    "/academies/{academyId}/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Immutable security and operational audit trail."
+    },
+    "/academies/{academyId}/conversations/{conversationId}": {
+      "schema": { "$ref": "#/entities/Conversation" },
+      "description": "Participant-scoped conversations."
+    },
+    "/academies/{academyId}/conversations/{conversationId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Conversation messages."
+    },
+    "/academies/{academyId}/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "Academy notifications."
+    },
+    "/academies/{academyId}/resources/{resourceId}": {
+      "schema": { "$ref": "#/entities/ResourceFile" },
+      "description": "Educational file metadata linked to Firebase Storage."
+    },
+    "/academies/{academyId}/fcmTokens/{uid}": {
+      "schema": { "$ref": "#/entities/FcmToken" },
+      "description": "User FCM push token."
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "منصة الأكاديميات",
+  "description": "منصة سحابية متكاملة لإدارة الأكاديميات التعليمية وحلقات القرآن الكريم والدروس بالعربية مع عزل كامل للصلاحيات والبيانات.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

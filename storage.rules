@@ -1,0 +1,39 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    function isActiveAcademyUser(academyId) {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.academyId == academyId
+        && request.auth.token.status == 'active';
+    }
+
+    function isStaffOrOwner(academyId) {
+      return isActiveAcademyUser(academyId)
+        && request.auth.token.role in ['owner', 'supervisor', 'teacher'];
+    }
+
+    // Educational files scoped by academyId and groupId
+    match /academies/{academyId}/groups/{groupId}/{fileName} {
+      allow read: if isActiveAcademyUser(academyId);
+      allow write: if isStaffOrOwner(academyId)
+        && request.resource != null
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('application/pdf|image/.*|audio/.*|text/plain');
+    }
+
+    // Chat attachments scoped by academyId and conversationId
+    match /academies/{academyId}/conversations/{conversationId}/{fileName} {
+      allow read: if isActiveAcademyUser(academyId);
+      allow write: if isActiveAcademyUser(academyId)
+        && request.resource != null
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('application/pdf|image/.*|audio/.*');
+    }
+  }
+}

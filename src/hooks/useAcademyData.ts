@@ -79,7 +79,8 @@ export function useAcademyData(actor: ActorContext | null): AcademyDataState {
 
     const academyId = actor.academyId;
     const unsubs: Unsubscribe[] = [];
-    const base = (colName: string) => collection(db, 'academies', academyId, colName);
+    const base = (colName: string) =>
+      query(collection(db, 'academies', academyId, colName), where('academyId', '==', academyId));
 
     const listen = <T,>(
       q: Query,

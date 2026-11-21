@@ -1,13 +1,6 @@
 name: Deploy Firestore Rules
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "firestore.rules"
-      - "firebase.json"
-      - ".github/workflows/deploy-firestore-rules.yml"
   workflow_dispatch:
 
 permissions:
@@ -37,5 +30,5 @@ jobs:
       - name: Install Firebase CLI
         run: npm install --global firebase-tools
 
-      - name: Deploy rules to the named Firestore database
-        run: firebase deploy --only firestore:ai-studio-d56df56b-4921-4e23-8608-51b87386123a --project monisakacadmy --non-interactive
+      - name: Deploy rules to the default Firestore database
+        run: firebase deploy --only firestore --project monisakacadmies --non-interactive

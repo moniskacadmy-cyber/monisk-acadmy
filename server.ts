@@ -1,3 +1,8 @@
+import { guardCreateMember, guardRegisterResource, guardSendNotification } from './src/server/guards';
+
+app.post('/api/members/create', guardCreateMember, (req, res) => void handleCreateMember(req, res));
+app.post('/api/notifications/send', guardSendNotification, (req, res) => void handleSendNotification(req, res));
+app.post('/api/resources/register', guardRegisterResource, (req, res) => void handleRegisterResource(req, res));
 import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';

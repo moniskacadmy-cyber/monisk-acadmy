@@ -1,0 +1,54 @@
+name: Repair First Owner Claims
+
+on:
+  workflow_dispatch:
+    inputs:
+      academy_id:
+        description: Academy ID (must be academy_main)
+        required: true
+        default: academy_main
+        type: string
+      owner_uid:
+        description: Firebase Auth UID of the existing academy owner
+        required: true
+        type: string
+      owner_email:
+        description: Email of the existing academy owner (must match Auth and member records)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repair-first-owner-claims
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Verify and repair owner custom claims
+        env:
+          FIREBASE_PROJECT_ID: monisakacadmies
+          CLAIM_REPAIR_ACADEMY_ID: ${{ inputs.academy_id }}
+          CLAIM_REPAIR_OWNER_UID: ${{ inputs.owner_uid }}
+          CLAIM_REPAIR_OWNER_EMAIL: ${{ inputs.owner_email }}
+        run: npx tsx scripts/repair-first-owner-claims.ts

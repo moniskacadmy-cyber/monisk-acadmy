@@ -1,0 +1,63 @@
+name: Generate package lockfile once
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: one-time-lockfile-generation
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repair branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: fix/repair-owner-firestore-claims
+          path: target
+          persist-credentials: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+
+      - name: Generate package-lock.json without running lifecycle scripts
+        working-directory: target
+        run: npm install --package-lock-only --legacy-peer-deps --ignore-scripts --no-audit --no-fund
+
+      - name: Commit lockfile to the repair branch
+        working-directory: target
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo "package-lock.json is already current; no commit is needed."
+          else
+            git commit -m "chore: add npm lockfile for reproducible workflow installs"
+            git push origin HEAD:refs/heads/fix/repair-owner-firestore-claims
+          fi
+
+  cleanup:
+    if: always()
+    needs: generate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Remove this temporary workflow from main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/generate-lockfile-once.yml
+          git commit -m "chore: remove one-time lockfile workflow"
+          git push origin HEAD:refs/heads/main

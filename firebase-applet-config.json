@@ -1,12 +1,12 @@
 {
-  "projectId": "monisakacadmy",
-  "appId": "1:472665495512:web:95d7499bae5956e268c4ad",
-  "apiKey": "AIzaSyDM6T_UciiS6En-Y8J0n-qdXCm_Xny6aQE",
-  "authDomain": "monisakacadmy.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-d56df56b-4921-4e23-8608-51b87386123a",
-  "storageBucket": "monisakacadmy.firebasestorage.app",
-  "messagingSenderId": "472665495512",
-  "measurementId": "",
-  "oAuthClientId": "472665495512-nrfdgpla4v1pohjiei924vhna3eei2qp.apps.googleusercontent.com",
+  "projectId": "monisakacadmies",
+  "appId": "1:60873146691:web:d8a8dc6b292530fbbdaff6",
+  "apiKey": "AIzaSyCldjJ28rB5Zlvw0FLuckRpUGBimElAtsg",
+  "authDomain": "monisakacadmies.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "monisakacadmies.firebasestorage.app",
+  "messagingSenderId": "60873146691",
+  "measurementId": "G-DT8K3Z67M2",
+  "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }

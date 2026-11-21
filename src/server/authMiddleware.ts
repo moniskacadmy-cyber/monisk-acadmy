@@ -95,13 +95,26 @@ export function handleApiError(res: ApiResponse, err: unknown): void {
     return;
   }
 
-  const message = err instanceof Error ? err.message : 'حدث خطأ غير متوقع في الخادم.';
-  if (message.includes('PERMISSION_DENIED') || message.includes('7 PERMISSION_DENIED')) {
+  // Firebase Admin errors carry a string `code` such as 'auth/email-already-exists'
+  const firebaseCode = (err as { code?: unknown } | null)?.code;
+  if (firebaseCode === 'auth/email-already-exists') {
+    res.status(409).json({
+      ok: false,
+      code: 'EMAIL_ALREADY_EXISTS',
+      error: 'هذا البريد الإلكتروني مسجل بالفعل في النظام.',
+    });
+    return;
+  }
+
+  // Full details stay in server logs; the client only gets a generic message.
+  console.error('[API] Unexpected error:', err);
+
+  const message = err instanceof Error ? err.message : '';
+  if (message.includes('PERMISSION_DENIED')) {
     res.status(403).json({
       ok: false,
       code: 'IAM_PERMISSION_DENIED',
-      error:
-        'تعذر وصول الخادم إلى Firebase. تأكد من منح حساب الخدمة أدوار IAM المطلوبة (Datastore User و Firebase Authentication Admin) على مشروع monisakacadmy.',
+      error: 'تعذر وصول الخادم إلى قاعدة البيانات. تواصل مع مسؤول النظام.',
     });
     return;
   }
@@ -109,6 +122,6 @@ export function handleApiError(res: ApiResponse, err: unknown): void {
   res.status(500).json({
     ok: false,
     code: 'INTERNAL_ERROR',
-    error: message,
+    error: 'حدث خطأ غير متوقع في الخادم. حاول مرة أخرى لاحقًا.',
   });
 }

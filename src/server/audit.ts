@@ -1,5 +1,5 @@
-import type { ActorContext } from '../shared/types';
-import { adminDb } from './firebaseAdmin';
+import type { ActorContext } from '../shared/types.js';
+import { adminDb } from './firebaseAdmin.js';
 
 interface WriteAuditInput {
   academyId: string;

@@ -44,8 +44,8 @@ export async function authenticateActor(req: ApiRequest): Promise<ActorContext> 
     throw new PolicyError('جلسة الدخول منتهية أو غير صالحة. يرجى إعادة تسجيل الدخول.', 401, 'INVALID_TOKEN');
   }
 
-  const claimAcademyId = typeof decoded.academyId === 'string' ? decoded.academyId : '';
-  const claimRole = typeof decoded.role === 'string' ? decoded.role : '';
+  const claimAcademyId = typeof decoded.academyId === 'string' ? decoded.academyId.trim() : '';
+  const claimRole = typeof decoded.role === 'string' ? decoded.role.trim() : '';
 
   if (!claimAcademyId || !VALID_ROLES.includes(claimRole as AcademyRole)) {
     throw new PolicyError(
@@ -67,6 +67,14 @@ export async function authenticateActor(req: ApiRequest): Promise<ActorContext> 
   }
 
   const member = memberSnap.data() as MemberDoc;
+
+  if (member.academyId !== claimAcademyId || member.role !== claimRole) {
+    throw new PolicyError(
+      'صلاحيات الجلسة غير متطابقة مع سجل العضوية. يرجى تحديث الجلسة أو إعادة تسجيل الدخول.',
+      403,
+      'NO_ACADEMY_CLAIMS'
+    );
+  }
 
   const actor: ActorContext = {
     uid: decoded.uid,

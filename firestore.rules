@@ -97,14 +97,25 @@ service cloud.firestore {
       match /members/{uid} {
         allow get: if isValidId(academyId)
           && isValidId(uid)
-          && isActiveMember(academyId)
           && (
-            request.auth.uid == uid
-            || isOwner(academyId)
-            || hasPerm(academyId, 'supervisors')
-            || hasPerm(academyId, 'teachers')
-            || hasPerm(academyId, 'students')
-            || hasPerm(academyId, 'parents')
+            (
+              belongsToAcademy(academyId)
+              && request.auth.uid == uid
+              && (
+                !exists(/databases/$(database)/documents/academies/$(academyId)/members/$(uid))
+                || get(/databases/$(database)/documents/academies/$(academyId)/members/$(uid)).data.status == 'active'
+              )
+            )
+            || (
+              isActiveMember(academyId)
+              && (
+                isOwner(academyId)
+                || hasPerm(academyId, 'supervisors')
+                || hasPerm(academyId, 'teachers')
+                || hasPerm(academyId, 'students')
+                || hasPerm(academyId, 'parents')
+              )
+            )
           );
         allow list: if isValidId(academyId)
           && belongsToAcademy(academyId)

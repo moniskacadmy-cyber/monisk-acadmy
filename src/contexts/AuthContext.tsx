@@ -55,11 +55,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const tokenResult = await firebaseUser.getIdTokenResult(true);
       const claims = tokenResult.claims;
-      const academyId = typeof claims.academyId === 'string' ? claims.academyId : '';
-      const role = typeof claims.role === 'string' ? (claims.role as AcademyRole) : null;
+      const academyId = typeof claims.academyId === 'string' ? claims.academyId.trim() : '';
+      const claimRole = typeof claims.role === 'string' ? (claims.role as AcademyRole) : null;
       const claimStatus = claims.status;
 
-      if (!academyId || !role || !VALID_ROLES.includes(role)) {
+      if (!academyId || !claimRole || !VALID_ROLES.includes(claimRole)) {
         setActor(null);
         setAcademy(null);
         setAccessState('no_academy');
@@ -82,7 +82,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setActor(null);
         setAcademy(null);
         setAccessState('no_academy');
-        setAccessMessage('سجل العضوية غير موجود داخل الأكاديمية.');
+        setAccessMessage(
+          `سجل العضوية غير موجود داخل الأكاديمية (${academyId}). تأكد من تشغيل npm run seed:owner على نفس قاعدة بيانات Firestore المرتبطة بالتطبيق.`
+        );
         return;
       }
 
@@ -95,8 +97,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const academySnap = await getDoc(doc(db, 'academies', academyId));
-      const academyData = academySnap.exists() ? (academySnap.data() as AcademyDoc) : null;
+      if (memberData.academyId !== academyId || memberData.role !== claimRole) {
+        setActor(null);
+        setAcademy(null);
+        setAccessState('no_academy');
+        setAccessMessage(
+          'بيانات الدور أو الأكاديمية في رمز المصادقة غير متطابقة مع سجل العضوية. أعد تشغيل npm run seed:owner أو سجّل الخروج ثم أعد الدخول.'
+        );
+        return;
+      }
+
+      let academyData: AcademyDoc | null = null;
+      try {
+        const academySnap = await getDoc(doc(db, 'academies', academyId));
+        academyData = academySnap.exists() ? (academySnap.data() as AcademyDoc) : null;
+      } catch {
+        academyData = null;
+      }
 
       setAcademy(academyData);
       setActor({
@@ -110,7 +127,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAccessState('authorized');
       setAccessMessage('');
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'تعذر التحقق من صلاحيات الحساب.';
+      const rawMsg = err instanceof Error ? err.message : 'تعذر التحقق من صلاحيات الحساب.';
+      const msg = rawMsg.toLowerCase().includes('missing or insufficient permissions')
+        ? `تعذر قراءة سجل العضوية (Missing or insufficient permissions). تحقق من وجود وثيقة العضوية بحالة active داخل نفس قاعدة البيانات ونشر أحدث قواعد firestore.rules.`
+        : rawMsg;
       setActor(null);
       setAcademy(null);
       setAccessState('no_academy');

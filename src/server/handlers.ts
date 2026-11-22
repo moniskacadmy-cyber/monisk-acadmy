@@ -11,7 +11,7 @@ import {
   assertCanUpdatePermissions,
   isValidDocumentId,
   sanitizePermissions,
-} from '../shared/policy';
+} from '../shared/policy.js';
 import type {
   AcademyRole,
   GroupDoc,
@@ -19,10 +19,10 @@ import type {
   MemberDoc,
   StudentDoc,
   SupervisorPermission,
-} from '../shared/types';
-import { writeAuditLog } from './audit';
-import { authenticateActor, handleApiError, type ApiRequest, type ApiResponse } from './authMiddleware';
-import { adminAuth, adminDb, adminMessaging } from './firebaseAdmin';
+} from '../shared/types.js';
+import { writeAuditLog } from './audit.js';
+import { authenticateActor, handleApiError, type ApiRequest, type ApiResponse } from './authMiddleware.js';
+import { adminAuth, adminDb, adminMessaging } from './firebaseAdmin.js';
 
 function str(val: unknown, max = 200): string {
   if (typeof val !== 'string') return '';

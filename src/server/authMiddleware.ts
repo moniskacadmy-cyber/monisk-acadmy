@@ -3,9 +3,9 @@ import {
   assertAcademyIsolation,
   assertActiveActor,
   sanitizePermissions,
-} from '../shared/policy';
-import type { AcademyRole, ActorContext, MemberDoc } from '../shared/types';
-import { adminAuth, adminDb } from './firebaseAdmin';
+} from '../shared/policy.js';
+import type { AcademyRole, ActorContext, MemberDoc } from '../shared/types.js';
+import { adminAuth, adminDb } from './firebaseAdmin.js';
 
 export interface ApiRequest {
   method?: string;

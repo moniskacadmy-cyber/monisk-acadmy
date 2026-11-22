@@ -1,5 +1,5 @@
-import { handleCreateMember } from '../../src/server/handlers';
-import type { ApiRequest, ApiResponse } from '../../src/server/authMiddleware';
+import { handleCreateMember } from '../../src/server/handlers.js';
+import type { ApiRequest, ApiResponse } from '../../src/server/authMiddleware.js';
 
 interface VercelRequest extends ApiRequest {
   url?: string;

@@ -4,8 +4,8 @@ import type {
   MemberDoc,
   StudentDoc,
   SupervisorPermission,
-} from './types';
-import { ALL_SUPERVISOR_PERMISSIONS } from './types';
+} from './types.js';
+import { ALL_SUPERVISOR_PERMISSIONS } from './types.js';
 
 export class PolicyError extends Error {
   public readonly statusCode: number;

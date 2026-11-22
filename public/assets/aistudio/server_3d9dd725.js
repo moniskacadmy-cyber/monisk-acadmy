@@ -198,93 +198,27 @@ function loadAppletConfig() {
   return {};
 }
 var appletConfig = loadAppletConfig();
-function normalizePrivateKey(rawKey) {
-  if (!rawKey) return null;
-  let candidate = rawKey.trim();
-  if (!candidate) return null;
-  if (candidate.endsWith(",")) {
-    candidate = candidate.slice(0, -1).trim();
-  }
-  if (candidate.startsWith("{")) {
-    try {
-      const parsed = JSON.parse(candidate);
-      if (typeof parsed.private_key === "string") {
-        candidate = parsed.private_key.trim();
-      }
-    } catch {
-    }
-  } else if (candidate.startsWith('"') && candidate.endsWith('"') || candidate.startsWith("'") && candidate.endsWith("'")) {
-    try {
-      const unquoted = JSON.parse(
-        candidate.startsWith("'") ? `"${candidate.slice(1, -1).replace(/"/g, '\\"')}"` : candidate
-      );
-      if (typeof unquoted === "string") {
-        candidate = unquoted.trim();
-      }
-    } catch {
-      candidate = candidate.slice(1, -1).trim();
-    }
-  }
-  if (!candidate.includes("-----BEGIN") && /^[A-Za-z0-9+/=\s]+$/.test(candidate)) {
-    try {
-      const decoded = Buffer.from(candidate.replace(/\s+/g, ""), "base64").toString("utf8").trim();
-      if (decoded.includes("-----BEGIN")) {
-        candidate = decoded;
-      }
-    } catch {
-    }
-  }
-  candidate = candidate.replace(/\\\\r\\\\n/g, "\n").replace(/\\\\n/g, "\n").replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\r\n/g, "\n").trim();
-  const pemMatch = candidate.match(
-    /-----BEGIN ([A-Z0-9 ]+)-----([\s\S]+?)-----END \1-----/
-  );
-  if (!pemMatch) {
-    return null;
-  }
-  const label = pemMatch[1];
-  const body = pemMatch[2].replace(/\s+/g, "");
-  if (!body) {
-    return null;
-  }
-  const wrappedBody = body.match(/.{1,64}/g)?.join("\n") || body;
-  return `-----BEGIN ${label}-----
-${wrappedBody}
------END ${label}-----
-`;
-}
 function createAdminApp() {
   if (getApps().length > 0) {
     return getApp();
   }
   const projectId = process.env.FIREBASE_PROJECT_ID || appletConfig.projectId;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL?.trim();
-  const normalizedPrivateKey = normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY);
-  const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || appletConfig.storageBucket;
-  if (projectId && clientEmail && normalizedPrivateKey) {
-    try {
-      return initializeApp({
-        credential: cert({
-          projectId,
-          clientEmail,
-          privateKey: normalizedPrivateKey
-        }),
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+  if (projectId && clientEmail && privateKey) {
+    return initializeApp({
+      credential: cert({
         projectId,
-        ...storageBucket ? { storageBucket } : {}
-      });
-    } catch (err) {
-      console.warn(
-        "[Firebase Admin] Failed to initialize with FIREBASE_PRIVATE_KEY; falling back to Application Default Credentials:",
-        err instanceof Error ? err.message : String(err)
-      );
-    }
-  } else if (process.env.FIREBASE_PRIVATE_KEY) {
-    console.warn(
-      "[Firebase Admin] FIREBASE_PRIVATE_KEY is not a valid PEM private key; falling back to Application Default Credentials."
-    );
+        clientEmail,
+        privateKey: privateKey.replace(/\\n/g, "\n")
+      }),
+      projectId,
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || appletConfig.storageBucket
+    });
   }
   return initializeApp({
     ...projectId ? { projectId } : {},
-    ...storageBucket ? { storageBucket } : {}
+    ...appletConfig.storageBucket ? { storageBucket: appletConfig.storageBucket } : {}
   });
 }
 var adminApp = createAdminApp();
@@ -357,16 +291,7 @@ async function authenticateActor(req) {
     status: member.status
   };
   assertActiveActor(actor);
-  let parsedBody = req.body;
-  if (typeof req.body === "string") {
-    try {
-      parsedBody = JSON.parse(req.body);
-      req.body = parsedBody;
-    } catch {
-      throw new PolicyError("\u062A\u0646\u0633\u064A\u0642 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0637\u0644\u0628 \u063A\u064A\u0631 \u0635\u0627\u0644\u062D.", 400, "INVALID_JSON_BODY");
-    }
-  }
-  assertAcademyIsolation(actor, parsedBody?.academyId);
+  assertAcademyIsolation(actor, req.body?.academyId);
   return actor;
 }
 function handleApiError(res, err) {
@@ -378,62 +303,19 @@ function handleApiError(res, err) {
     });
     return;
   }
-  const firebaseCode = err?.code;
-  if (firebaseCode === "auth/email-already-exists") {
-    res.status(409).json({
-      ok: false,
-      code: "EMAIL_ALREADY_EXISTS",
-      error: "\u0647\u0630\u0627 \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0645\u0633\u062C\u0644 \u0628\u0627\u0644\u0641\u0639\u0644 \u0641\u064A \u0627\u0644\u0646\u0638\u0627\u0645."
-    });
-    return;
-  }
-  if (firebaseCode === "auth/invalid-email") {
-    res.status(400).json({
-      ok: false,
-      code: "INVALID_EMAIL",
-      error: "\u0635\u064A\u063A\u0629 \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u063A\u064A\u0631 \u0635\u0627\u0644\u062D\u0629."
-    });
-    return;
-  }
-  if (firebaseCode === "auth/invalid-password") {
-    res.status(400).json({
-      ok: false,
-      code: "WEAK_PASSWORD",
-      error: "\u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u063A\u064A\u0631 \u0645\u0637\u0627\u0628\u0642\u0629 \u0644\u0645\u062A\u0637\u0644\u0628\u0627\u062A Firebase Auth (6 \u0623\u062D\u0631\u0641 \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644)."
-    });
-    return;
-  }
-  if (firebaseCode === "auth/operation-not-allowed") {
-    res.status(403).json({
-      ok: false,
-      code: "AUTH_PROVIDER_DISABLED",
-      error: "\u0645\u0632\u0648\u062F \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0648\u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u063A\u064A\u0631 \u0645\u0641\u0639\u0651\u0644 \u0641\u064A Firebase Authentication."
-    });
-    return;
-  }
-  if (firebaseCode === "auth/insufficient-permission" || firebaseCode === "auth/internal-error" || firebaseCode === "app/invalid-credential") {
-    console.error("[API] Firebase Admin permission/credential error:", err);
+  const message = err instanceof Error ? err.message : "\u062D\u062F\u062B \u062E\u0637\u0623 \u063A\u064A\u0631 \u0645\u062A\u0648\u0642\u0639 \u0641\u064A \u0627\u0644\u062E\u0627\u062F\u0645.";
+  if (message.includes("PERMISSION_DENIED") || message.includes("7 PERMISSION_DENIED")) {
     res.status(403).json({
       ok: false,
       code: "IAM_PERMISSION_DENIED",
-      error: "\u062A\u0639\u0630\u0631 \u0648\u0635\u0648\u0644 \u0627\u0644\u062E\u0627\u062F\u0645 \u0625\u0644\u0649 Firebase Auth \u0623\u0648 Firestore. \u062A\u0623\u0643\u062F \u0645\u0646 \u0625\u0639\u062F\u0627\u062F FIREBASE_CLIENT_EMAIL \u0648FIREBASE_PRIVATE_KEY \u0623\u0648 \u0645\u0646\u062D \u062D\u0633\u0627\u0628 \u0627\u0644\u062E\u062F\u0645\u0629 \u0635\u0644\u0627\u062D\u064A\u0627\u062A datastore.user \u0648firebaseauth.admin."
-    });
-    return;
-  }
-  console.error("[API] Unexpected error:", err);
-  const message = err instanceof Error ? err.message : "";
-  if (message.includes("PERMISSION_DENIED") || firebaseCode === 7) {
-    res.status(403).json({
-      ok: false,
-      code: "IAM_PERMISSION_DENIED",
-      error: "\u062A\u0639\u0630\u0631 \u0648\u0635\u0648\u0644 \u0627\u0644\u062E\u0627\u062F\u0645 \u0625\u0644\u0649 \u0642\u0627\u0639\u062F\u0629 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A. \u062A\u0623\u0643\u062F \u0645\u0646 \u0635\u0644\u0627\u062D\u064A\u0627\u062A \u062D\u0633\u0627\u0628 \u0627\u0644\u062E\u062F\u0645\u0629 (IAM) \u0623\u0648 \u0645\u062A\u063A\u064A\u0631\u0627\u062A Firebase Admin."
+      error: "\u062A\u0639\u0630\u0631 \u0648\u0635\u0648\u0644 \u0627\u0644\u062E\u0627\u062F\u0645 \u0625\u0644\u0649 Firebase. \u062A\u0623\u0643\u062F \u0645\u0646 \u0645\u0646\u062D \u062D\u0633\u0627\u0628 \u0627\u0644\u062E\u062F\u0645\u0629 \u0623\u062F\u0648\u0627\u0631 IAM \u0627\u0644\u0645\u0637\u0644\u0648\u0628\u0629 (Datastore User \u0648 Firebase Authentication Admin) \u0639\u0644\u0649 \u0645\u0634\u0631\u0648\u0639 monisakacadmy."
     });
     return;
   }
   res.status(500).json({
     ok: false,
     code: "INTERNAL_ERROR",
-    error: "\u062D\u062F\u062B \u062E\u0637\u0623 \u063A\u064A\u0631 \u0645\u062A\u0648\u0642\u0639 \u0641\u064A \u0627\u0644\u062E\u0627\u062F\u0645. \u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649 \u0644\u0627\u062D\u0642\u064B\u0627."
+    error: message
   });
 }
 
@@ -482,6 +364,12 @@ async function handleCreateMember(req, res) {
       emailVerified: true,
       disabled: false
     });
+    await adminAuth.setCustomUserClaims(userRecord.uid, {
+      academyId: actor.academyId,
+      role,
+      perms,
+      status: "active"
+    });
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const memberDoc = {
       id: userRecord.uid,
@@ -519,35 +407,15 @@ async function handleCreateMember(req, res) {
       };
       batch.set(academyRef(actor.academyId).collection("students").doc(userRecord.uid), studentDoc);
     }
-    const auditRef = academyRef(actor.academyId).collection("auditLogs").doc();
-    batch.set(auditRef, {
-      id: auditRef.id,
+    await batch.commit();
+    await writeAuditLog({
       academyId: actor.academyId,
-      actorUid: actor.uid,
-      actorEmail: actor.email,
-      actorRole: actor.role,
+      actor,
       action: "CREATE_MEMBER",
       targetCollection: "members",
       targetId: userRecord.uid,
-      details: { role, perms, email },
-      createdAt: now
+      details: { role, perms, email }
     });
-    try {
-      await adminAuth.setCustomUserClaims(userRecord.uid, {
-        academyId: actor.academyId,
-        role,
-        perms,
-        status: "active"
-      });
-      await batch.commit();
-    } catch (creationError) {
-      try {
-        await adminAuth.deleteUser(userRecord.uid);
-      } catch (cleanupError) {
-        console.error("[API] Failed to clean up incomplete member account:", cleanupError);
-      }
-      throw creationError;
-    }
     res.status(201).json({ ok: true, member: memberDoc });
   } catch (err) {
     handleApiError(res, err);

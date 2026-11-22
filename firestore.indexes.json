@@ -21,15 +21,6 @@
     { "collectionGroup": "parentLinks", "queryScope": "COLLECTION", "fields": [
       { "fieldPath": "academyId", "order": "ASCENDING" },
       { "fieldPath": "createdAt", "order": "DESCENDING" }] },
-    { "collectionGroup": "invoices", "queryScope": "COLLECTION", "fields": [
-      { "fieldPath": "academyId", "order": "ASCENDING" },
-      { "fieldPath": "createdAt", "order": "DESCENDING" }] },
-    { "collectionGroup": "payments", "queryScope": "COLLECTION", "fields": [
-      { "fieldPath": "academyId", "order": "ASCENDING" },
-      { "fieldPath": "createdAt", "order": "DESCENDING" }] },
-    { "collectionGroup": "payroll", "queryScope": "COLLECTION", "fields": [
-      { "fieldPath": "academyId", "order": "ASCENDING" },
-      { "fieldPath": "createdAt", "order": "DESCENDING" }] },
     { "collectionGroup": "leads", "queryScope": "COLLECTION", "fields": [
       { "fieldPath": "academyId", "order": "ASCENDING" },
       { "fieldPath": "createdAt", "order": "DESCENDING" }] },
@@ -64,9 +55,6 @@
     { "collectionGroup": "evaluations", "queryScope": "COLLECTION", "fields": [
       { "fieldPath": "academyId", "order": "ASCENDING" },
       { "fieldPath": "parentUids", "arrayConfig": "CONTAINS" }] },
-    { "collectionGroup": "invoices", "queryScope": "COLLECTION", "fields": [
-      { "fieldPath": "academyId", "order": "ASCENDING" },
-      { "fieldPath": "parentUids", "arrayConfig": "CONTAINS" }] },
     { "collectionGroup": "resources", "queryScope": "COLLECTION", "fields": [
       { "fieldPath": "academyId", "order": "ASCENDING" },
       { "fieldPath": "studentUserIds", "arrayConfig": "CONTAINS" }] },
@@ -78,7 +66,10 @@
       { "fieldPath": "participantUids", "arrayConfig": "CONTAINS" }] },
     { "collectionGroup": "notifications", "queryScope": "COLLECTION", "fields": [
       { "fieldPath": "academyId", "order": "ASCENDING" },
-      { "fieldPath": "recipientUids", "arrayConfig": "CONTAINS" }] }
+      { "fieldPath": "recipientUids", "arrayConfig": "CONTAINS" }] },
+    { "collectionGroup": "messages", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "participantUids", "arrayConfig": "CONTAINS" },
+      { "fieldPath": "createdAt", "order": "ASCENDING" }] }
   ],
   "fieldOverrides": []
 }

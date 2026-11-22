@@ -1,8 +1,8 @@
 import {
   PolicyError,
   assertCanAccessCrm,
-  assertCanAccessFinance,
-  assertCanAccessPayroll,
+  assertCanSetTeacherRate,
+  assertCanViewEarnings,
   assertCanCreateMember,
   assertCanLinkParent,
   assertCanManageGroups,
@@ -14,12 +14,23 @@ import {
 } from '../shared/policy';
 import type {
   AcademyRole,
+  ConversationDoc,
+  ConversationKind,
   GroupDoc,
-  InvoiceDoc,
   MemberDoc,
+  MessageDoc,
   StudentDoc,
   SupervisorPermission,
 } from '../shared/types';
+import {
+  ATTENDED_STATUSES,
+  calcSessionAmount,
+  isValidHourlyRate,
+  roundMoney,
+  splitAmongStudents,
+  type SessionFinanceDoc,
+  type TeacherRateDoc,
+} from '../shared/earnings';
 import { writeAuditLog } from './audit';
 import { authenticateActor, handleApiError, type ApiRequest, type ApiResponse } from './authMiddleware';
 import { adminAuth, adminDb, adminMessaging } from './firebaseAdmin';
@@ -738,6 +749,28 @@ export async function handleRecordSession(req: ApiRequest, res: ApiResponse): Pr
     const batch = adminDb.batch();
     batch.set(sessionRef, sessionDoc);
 
+    // Completed reports get a snapshot of the teacher's rate and the computed amount.
+    // Later rate changes do not rewrite past reports.
+    if (status === 'completed') {
+      const rateSnap = await academyRef(actor.academyId).collection('teacherRates').doc(group.teacherUid).get();
+      const hourlyRate = rateSnap.exists ? Number((rateSnap.data() as TeacherRateDoc).hourlyRate) : null;
+      const finance: SessionFinanceDoc = {
+        id: sessionRef.id,
+        academyId: actor.academyId,
+        sessionId: sessionRef.id,
+        teacherUid: group.teacherUid,
+        groupId,
+        groupName: group.name,
+        title,
+        scheduledDate,
+        durationMinutes,
+        hourlyRate,
+        amount: calcSessionAmount(hourlyRate, durationMinutes),
+        createdAt: now,
+      };
+      batch.set(academyRef(actor.academyId).collection('sessionFinance').doc(sessionRef.id), finance);
+    }
+
     const attendanceItems = Array.isArray(body.attendance) ? body.attendance : [];
     const evaluationItems = Array.isArray(body.evaluations) ? body.evaluations : [];
 
@@ -826,197 +859,6 @@ export async function handleRecordSession(req: ApiRequest, res: ApiResponse): Pr
     });
 
     res.status(201).json({ ok: true, session: sessionDoc });
-  } catch (err) {
-    handleApiError(res, err);
-  }
-}
-
-// 8. Finance: Invoices & Payments (Owner or Supervisor with 'finance')
-export async function handleCreateInvoice(req: ApiRequest, res: ApiResponse): Promise<void> {
-  try {
-    const actor = await authenticateActor(req);
-    assertCanAccessFinance(actor);
-
-    const body = req.body || {};
-    const studentId = str(body.studentId, 128);
-    const title = str(body.title, 160);
-    const amount = num(body.amount, 0);
-    const currency = str(body.currency, 12) || 'SAR';
-    const dueDate = str(body.dueDate, 40) || new Date().toISOString().slice(0, 10);
-
-    if (!isValidDocumentId(studentId) || title.length < 2 || amount <= 0) {
-      throw new PolicyError('يرجى إدخال بيانات فاتورة صحيحة ومبلغ أكبر من صفر.', 400, 'INVALID_INVOICE');
-    }
-
-    const studentSnap = await academyRef(actor.academyId).collection('students').doc(studentId).get();
-    if (!studentSnap.exists) {
-      throw new PolicyError('الطالب غير موجود.', 404, 'STUDENT_NOT_FOUND');
-    }
-    const student = studentSnap.data() as StudentDoc;
-
-    const ref = academyRef(actor.academyId).collection('invoices').doc();
-    const now = new Date().toISOString();
-    const invoice: InvoiceDoc = {
-      id: ref.id,
-      academyId: actor.academyId,
-      studentId,
-      studentName: student.fullName,
-      parentUids: student.parentUids || [],
-      title,
-      amount,
-      paidAmount: 0,
-      currency,
-      dueDate,
-      status: 'pending',
-      createdBy: actor.uid,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    await ref.set(invoice);
-
-    await writeAuditLog({
-      academyId: actor.academyId,
-      actor,
-      action: 'CREATE_INVOICE',
-      targetCollection: 'invoices',
-      targetId: ref.id,
-      details: { studentId, amount, currency },
-    });
-
-    res.status(201).json({ ok: true, invoice });
-  } catch (err) {
-    handleApiError(res, err);
-  }
-}
-
-export async function handleRecordPayment(req: ApiRequest, res: ApiResponse): Promise<void> {
-  try {
-    const actor = await authenticateActor(req);
-    assertCanAccessFinance(actor);
-
-    const body = req.body || {};
-    const invoiceId = str(body.invoiceId, 128);
-    const amount = num(body.amount, 0);
-    const method = ['cash', 'bank_transfer', 'card', 'online'].includes(String(body.method))
-      ? (String(body.method) as 'cash' | 'bank_transfer' | 'card' | 'online')
-      : 'bank_transfer';
-    const reference = str(body.reference, 120);
-
-    if (!isValidDocumentId(invoiceId) || amount <= 0) {
-      throw new PolicyError('يرجى تحديد الفاتورة ومبلغ السداد.', 400, 'INVALID_PAYMENT');
-    }
-
-    const invoiceRef = academyRef(actor.academyId).collection('invoices').doc(invoiceId);
-    const invoiceSnap = await invoiceRef.get();
-    if (!invoiceSnap.exists) {
-      throw new PolicyError('الفاتورة غير موجودة.', 404, 'INVOICE_NOT_FOUND');
-    }
-    const invoice = invoiceSnap.data() as InvoiceDoc;
-
-    const newPaid = Math.min(invoice.amount, (invoice.paidAmount || 0) + amount);
-    const newStatus = newPaid >= invoice.amount ? 'paid' : 'partial';
-    const now = new Date().toISOString();
-
-    const payRef = academyRef(actor.academyId).collection('payments').doc();
-    const payment = {
-      id: payRef.id,
-      academyId: actor.academyId,
-      invoiceId,
-      studentId: invoice.studentId,
-      studentName: invoice.studentName,
-      amount,
-      currency: invoice.currency,
-      method,
-      ...(reference ? { reference } : {}),
-      recordedBy: actor.uid,
-      paidAt: now.slice(0, 10),
-      createdAt: now,
-    };
-
-    const batch = adminDb.batch();
-    batch.set(payRef, payment);
-    batch.update(invoiceRef, { paidAmount: newPaid, status: newStatus, updatedAt: now });
-    await batch.commit();
-
-    await writeAuditLog({
-      academyId: actor.academyId,
-      actor,
-      action: 'RECORD_PAYMENT',
-      targetCollection: 'payments',
-      targetId: payRef.id,
-      details: { invoiceId, amount, newStatus },
-    });
-
-    res.status(201).json({ ok: true, payment });
-  } catch (err) {
-    handleApiError(res, err);
-  }
-}
-
-// 9. Payroll (Owner or Supervisor with 'payroll')
-export async function handleCreatePayroll(req: ApiRequest, res: ApiResponse): Promise<void> {
-  try {
-    const actor = await authenticateActor(req);
-    assertCanAccessPayroll(actor);
-
-    const body = req.body || {};
-    const memberUid = str(body.memberUid, 128);
-    const periodMonth = str(body.periodMonth, 20);
-    const baseAmount = Math.max(0, num(body.baseAmount, 0));
-    const bonusAmount = Math.max(0, num(body.bonusAmount, 0));
-    const deductionAmount = Math.max(0, num(body.deductionAmount, 0));
-    const currency = str(body.currency, 12) || 'SAR';
-    const status = ['draft', 'approved', 'paid'].includes(String(body.status))
-      ? String(body.status)
-      : 'approved';
-    const notes = str(body.notes, 500);
-
-    if (!isValidDocumentId(memberUid) || !periodMonth) {
-      throw new PolicyError('يرجى تحديد العضو والشهر.', 400, 'INVALID_PAYROLL');
-    }
-
-    const memberSnap = await academyRef(actor.academyId).collection('members').doc(memberUid).get();
-    if (!memberSnap.exists) {
-      throw new PolicyError('العضو غير موجود.', 404, 'MEMBER_NOT_FOUND');
-    }
-    const member = memberSnap.data() as MemberDoc;
-
-    const netAmount = Math.max(0, baseAmount + bonusAmount - deductionAmount);
-    const ref = academyRef(actor.academyId).collection('payroll').doc();
-    const now = new Date().toISOString();
-
-    const record = {
-      id: ref.id,
-      academyId: actor.academyId,
-      memberUid,
-      memberName: member.name,
-      role: member.role,
-      periodMonth,
-      baseAmount,
-      bonusAmount,
-      deductionAmount,
-      netAmount,
-      currency,
-      status,
-      ...(notes ? { notes } : {}),
-      createdBy: actor.uid,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    await ref.set(record);
-
-    await writeAuditLog({
-      academyId: actor.academyId,
-      actor,
-      action: 'CREATE_PAYROLL',
-      targetCollection: 'payroll',
-      targetId: ref.id,
-      details: { memberUid, periodMonth, netAmount, status },
-    });
-
-    res.status(201).json({ ok: true, payroll: record });
   } catch (err) {
     handleApiError(res, err);
   }
@@ -1118,45 +960,182 @@ export async function handleCreateConversation(req: ApiRequest, res: ApiResponse
   try {
     const actor = await authenticateActor(req);
     const body = req.body || {};
-    const title = str(body.title, 160);
     const rawUids = Array.isArray(body.participantUids) ? body.participantUids : [];
-    const participantUids = Array.from(
-      new Set([actor.uid, ...rawUids.filter((u): u is string => isValidDocumentId(u))])
-    ).slice(0, 20);
+    const others = Array.from(
+      new Set(rawUids.filter((u): u is string => isValidDocumentId(u) && u !== actor.uid))
+    ).slice(0, 49);
 
-    if (title.length < 2 || participantUids.length < 2) {
-      throw new PolicyError('يرجى إدخال عنوان المحادثة واختيار مشارك واحد على الأقل.', 400, 'INVALID_CONVERSATION');
+    if (others.length === 0) {
+      throw new PolicyError('اختر عضوًا واحدًا على الأقل للمحادثة.', 400, 'INVALID_CONVERSATION');
     }
 
-    const participantNames: Record<string, string> = {};
-    for (const uid of participantUids) {
-      const mSnap = await academyRef(actor.academyId).collection('members').doc(uid).get();
+    const kind: ConversationKind = others.length === 1 ? 'direct' : 'group';
+    const groupTitle = str(body.title, 120);
+    if (kind === 'group' && groupTitle.length < 2) {
+      throw new PolicyError('اكتب اسمًا للمجموعة (حرفان على الأقل).', 400, 'INVALID_CONVERSATION_TITLE');
+    }
+
+    const membersCol = academyRef(actor.academyId).collection('members');
+    const actorSnap = await membersCol.doc(actor.uid).get();
+    const participantNames: Record<string, string> = {
+      [actor.uid]: (actorSnap.data() as MemberDoc | undefined)?.name || actor.email,
+    };
+
+    for (const uid of others) {
+      const mSnap = await membersCol.doc(uid).get();
       if (!mSnap.exists) {
         throw new PolicyError('أحد المشاركين غير منتمٍ لهذه الأكاديمية.', 403, 'INVALID_PARTICIPANT');
       }
-      const mData = mSnap.data() as MemberDoc;
-      participantNames[uid] = mData.name;
+      const member = mSnap.data() as MemberDoc;
+      if (member.status !== 'active') {
+        throw new PolicyError('أحد المشاركين حسابه معطل ولا يمكن إضافته.', 400, 'PARTICIPANT_DISABLED');
+      }
+      participantNames[uid] = member.name;
     }
 
-    const ref = academyRef(actor.academyId).collection('conversations').doc();
+    const conversations = academyRef(actor.academyId).collection('conversations');
+
+    // One direct chat per pair of people, like WhatsApp: reuse it if it already exists.
+    if (kind === 'direct') {
+      const otherUid = others[0];
+      const mine = await conversations.where('participantUids', 'array-contains', actor.uid).get();
+      const existing = mine.docs
+        .map((d) => d.data() as ConversationDoc)
+        .find(
+          (c) =>
+            (c.kind ?? 'direct') === 'direct' &&
+            c.participantUids.length === 2 &&
+            c.participantUids.includes(otherUid)
+        );
+      if (existing) {
+        res.status(200).json({ ok: true, created: false, conversation: existing });
+        return;
+      }
+    }
+
+    const ref = conversations.doc();
     const now = new Date().toISOString();
-    const docData = {
+    const docData: ConversationDoc = {
       id: ref.id,
       academyId: actor.academyId,
-      title,
-      participantUids,
+      kind,
+      title: kind === 'direct' ? participantNames[others[0]] : groupTitle,
+      participantUids: [actor.uid, ...others],
       participantNames,
+      lastReadAt: { [actor.uid]: now },
       lastMessageText: '',
       lastMessageAt: now,
+      lastMessageSenderUid: '',
+      lastMessageSenderName: '',
       createdBy: actor.uid,
       createdAt: now,
     };
 
     await ref.set(docData);
-    res.status(201).json({ ok: true, conversation: docData });
+    res.status(201).json({ ok: true, created: true, conversation: docData });
   } catch (err) {
     handleApiError(res, err);
   }
+}
+
+// Send a chat message. Messages are written only by the server so that the
+// sender, the participant check and the conversation summary stay consistent.
+export async function handleSendMessage(req: ApiRequest, res: ApiResponse): Promise<void> {
+  try {
+    const actor = await authenticateActor(req);
+    const body = req.body || {};
+    const conversationId = str(body.conversationId, 128);
+    const text = typeof body.text === 'string' ? body.text.trim() : '';
+
+    if (!isValidDocumentId(conversationId)) {
+      throw new PolicyError('المحادثة غير صالحة.', 400, 'INVALID_CONVERSATION_ID');
+    }
+    if (text.length < 1 || text.length > 2000) {
+      throw new PolicyError('نص الرسالة يجب أن يكون بين حرف و2000 حرف.', 400, 'INVALID_MESSAGE');
+    }
+
+    const convRef = academyRef(actor.academyId).collection('conversations').doc(conversationId);
+    const convSnap = await convRef.get();
+    if (!convSnap.exists) {
+      throw new PolicyError('المحادثة غير موجودة.', 404, 'CONVERSATION_NOT_FOUND');
+    }
+    const conv = convSnap.data() as ConversationDoc;
+    if (!conv.participantUids.includes(actor.uid)) {
+      throw new PolicyError('أنت لست عضوًا في هذه المحادثة.', 403, 'NOT_PARTICIPANT');
+    }
+
+    const now = new Date().toISOString();
+    const senderName = conv.participantNames?.[actor.uid] || actor.email;
+    const msgRef = convRef.collection('messages').doc();
+    const message: MessageDoc = {
+      id: msgRef.id,
+      academyId: actor.academyId,
+      conversationId,
+      participantUids: conv.participantUids,
+      senderUid: actor.uid,
+      senderName,
+      senderRole: actor.role,
+      text,
+      createdAt: now,
+    };
+
+    const batch = adminDb.batch();
+    batch.set(msgRef, message);
+    batch.update(convRef, {
+      lastMessageText: text.slice(0, 140),
+      lastMessageAt: now,
+      lastMessageSenderUid: actor.uid,
+      lastMessageSenderName: senderName,
+      [`lastReadAt.${actor.uid}`]: now,
+    });
+    await batch.commit();
+
+    res.status(201).json({ ok: true, message });
+  } catch (err) {
+    handleApiError(res, err);
+  }
+}
+
+// Mark a conversation as read for the current user (drives unread badges).
+export async function handleMarkConversationRead(req: ApiRequest, res: ApiResponse): Promise<void> {
+  try {
+    const actor = await authenticateActor(req);
+    const conversationId = str((req.body || {}).conversationId, 128);
+    if (!isValidDocumentId(conversationId)) {
+      throw new PolicyError('المحادثة غير صالحة.', 400, 'INVALID_CONVERSATION_ID');
+    }
+
+    const convRef = academyRef(actor.academyId).collection('conversations').doc(conversationId);
+    const convSnap = await convRef.get();
+    if (!convSnap.exists) {
+      throw new PolicyError('المحادثة غير موجودة.', 404, 'CONVERSATION_NOT_FOUND');
+    }
+    const conv = convSnap.data() as ConversationDoc;
+    if (!conv.participantUids.includes(actor.uid)) {
+      throw new PolicyError('أنت لست عضوًا في هذه المحادثة.', 403, 'NOT_PARTICIPANT');
+    }
+
+    const now = new Date().toISOString();
+    await convRef.update({ [`lastReadAt.${actor.uid}`]: now });
+    res.status(200).json({ ok: true, readAt: now });
+  } catch (err) {
+    handleApiError(res, err);
+  }
+}
+
+// Uids a teacher is allowed to reach: their students' accounts and those students' parents.
+async function teacherReachableUids(academyId: string, teacherUid: string): Promise<Set<string>> {
+  const snap = await academyRef(academyId)
+    .collection('students')
+    .where('teacherUids', 'array-contains', teacherUid)
+    .get();
+  const reachable = new Set<string>();
+  for (const d of snap.docs) {
+    const student = d.data() as StudentDoc;
+    if (student.userId) reachable.add(student.userId);
+    for (const parentUid of student.parentUids || []) reachable.add(parentUid);
+  }
+  return reachable;
 }
 
 export async function handleSendNotification(req: ApiRequest, res: ApiResponse): Promise<void> {
@@ -1169,16 +1148,39 @@ export async function handleSendNotification(req: ApiRequest, res: ApiResponse):
     const body = req.body || {};
     const title = str(body.title, 160);
     const messageBody = str(body.body, 600);
-    const category = ['session', 'evaluation', 'finance', 'system', 'message'].includes(String(body.category))
+    const category = ['session', 'evaluation', 'system', 'message'].includes(String(body.category))
       ? String(body.category)
       : 'system';
     const rawRecipients = Array.isArray(body.recipientUids) ? body.recipientUids : [];
-    const recipientUids = Array.from(
+    const requested = Array.from(
       new Set(rawRecipients.filter((u): u is string => isValidDocumentId(u)))
     ).slice(0, 150);
 
-    if (title.length < 2 || messageBody.length < 2 || recipientUids.length === 0) {
+    if (title.length < 2 || messageBody.length < 2 || requested.length === 0) {
       throw new PolicyError('يرجى تحديد المستلمين وعنوان ونص الإشعار.', 400, 'INVALID_NOTIFICATION');
+    }
+
+    // Teachers may only notify their own students and those students' parents.
+    // Owners and supervisors may notify any member of their academy.
+    const reachable = actor.role === 'teacher' ? await teacherReachableUids(actor.academyId, actor.uid) : null;
+    const recipientUids: string[] = [];
+    for (const uid of requested) {
+      if (reachable && !reachable.has(uid)) {
+        throw new PolicyError(
+          'يمكن للمعلم إرسال الإشعارات لطلابه وأولياء أمورهم فقط.',
+          403,
+          'RECIPIENT_OUT_OF_SCOPE'
+        );
+      }
+      const mSnap = await academyRef(actor.academyId).collection('members').doc(uid).get();
+      // Silently skip accounts that were removed or disabled.
+      if (mSnap.exists && (mSnap.data() as MemberDoc).status === 'active') {
+        recipientUids.push(uid);
+      }
+    }
+
+    if (recipientUids.length === 0) {
+      throw new PolicyError('لا يوجد مستلمون نشطون لهذا الإشعار.', 400, 'NO_ACTIVE_RECIPIENTS');
     }
 
     const ref = academyRef(actor.academyId).collection('notifications').doc();
@@ -1235,16 +1237,22 @@ export async function handleRegisterResource(req: ApiRequest, res: ApiResponse):
     }
 
     const body = req.body || {};
+    const resourceId = str(body.resourceId, 128);
     const groupId = str(body.groupId, 128);
     const title = str(body.title, 160);
     const fileName = str(body.fileName, 200);
     const storagePath = str(body.storagePath, 400);
-    const downloadUrl = str(body.downloadUrl, 1000);
     const contentType = str(body.contentType, 120) || 'application/octet-stream';
     const sizeBytes = Math.max(0, num(body.sizeBytes, 0));
 
-    if (!isValidDocumentId(groupId) || !title || !storagePath || !downloadUrl) {
+    if (!isValidDocumentId(resourceId) || !isValidDocumentId(groupId) || !title || !storagePath) {
       throw new PolicyError('بيانات الملف غير مكتملة.', 400, 'INVALID_RESOURCE');
+    }
+    // The file must sit directly inside this resource's own folder in this academy.
+    const folder = `academies/${actor.academyId}/resources/${resourceId}/`;
+    const fileInFolder = storagePath.slice(folder.length);
+    if (!storagePath.startsWith(folder) || !fileInFolder || fileInFolder.includes('/') || fileInFolder.includes('..')) {
+      throw new PolicyError('مسار الملف غير صالح.', 400, 'INVALID_STORAGE_PATH');
     }
 
     const groupSnap = await academyRef(actor.academyId).collection('groups').doc(groupId).get();
@@ -1257,7 +1265,13 @@ export async function handleRegisterResource(req: ApiRequest, res: ApiResponse):
       throw new PolicyError('لا يمكنك رفع ملف لحلقة معلم آخر.', 403, 'GROUP_FORBIDDEN');
     }
 
-    const ref = academyRef(actor.academyId).collection('resources').doc();
+    // Access list copied from the group. Storage rules use it to decide who can download.
+    // No download URL is stored: downloads go through Storage rules at click time.
+    const ref = academyRef(actor.academyId).collection('resources').doc(resourceId);
+    if ((await ref.get()).exists) {
+      throw new PolicyError('هذا الملف مسجل بالفعل.', 409, 'RESOURCE_EXISTS');
+    }
+
     const resource = {
       id: ref.id,
       academyId: actor.academyId,
@@ -1268,7 +1282,6 @@ export async function handleRegisterResource(req: ApiRequest, res: ApiResponse):
       title,
       fileName,
       storagePath,
-      downloadUrl,
       sizeBytes,
       contentType,
       uploadedBy: actor.uid,
@@ -1286,6 +1299,300 @@ export async function handleRegisterResource(req: ApiRequest, res: ApiResponse):
     });
 
     res.status(201).json({ ok: true, resource });
+  } catch (err) {
+    handleApiError(res, err);
+  }
+}
+
+// Chat contacts: names and roles of active members only. No phone numbers or emails.
+export async function handleListContacts(req: ApiRequest, res: ApiResponse): Promise<void> {
+  try {
+    const actor = await authenticateActor(req);
+    const snap = await academyRef(actor.academyId).collection('members').get();
+    const contacts = snap.docs
+      .map((d) => d.data() as MemberDoc)
+      .filter((m) => m.status === 'active')
+      .map((m) => ({ uid: m.uid, name: m.name, role: m.role }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+    res.status(200).json({ ok: true, contacts });
+  } catch (err) {
+    handleApiError(res, err);
+  }
+}
+
+// Set a teacher's hourly rate. Owner or supervisor only. Applies to reports recorded from now on.
+export async function handleSetTeacherRate(req: ApiRequest, res: ApiResponse): Promise<void> {
+  try {
+    const actor = await authenticateActor(req);
+    assertCanSetTeacherRate(actor);
+
+    const body = req.body || {};
+    const uid = str(body.uid, 128);
+    const hourlyRate = typeof body.hourlyRate === 'number' ? body.hourlyRate : Number(body.hourlyRate);
+
+    if (!isValidDocumentId(uid)) {
+      throw new PolicyError('معرف المعلم غير صالح.', 400, 'INVALID_UID');
+    }
+    if (!isValidHourlyRate(hourlyRate)) {
+      throw new PolicyError('ريت الساعة يجب أن يكون رقمًا بين 0 و100000.', 400, 'INVALID_RATE');
+    }
+
+    const memberSnap = await academyRef(actor.academyId).collection('members').doc(uid).get();
+    if (!memberSnap.exists) {
+      throw new PolicyError('المعلم غير موجود في هذه الأكاديمية.', 404, 'MEMBER_NOT_FOUND');
+    }
+    const member = memberSnap.data() as MemberDoc;
+    if (member.role !== 'teacher') {
+      throw new PolicyError('ريت الساعة يُحدد للمعلمين فقط.', 400, 'NOT_A_TEACHER');
+    }
+
+    const rateRef = academyRef(actor.academyId).collection('teacherRates').doc(uid);
+    const previousSnap = await rateRef.get();
+    const previous = previousSnap.exists ? Number((previousSnap.data() as TeacherRateDoc).hourlyRate) : null;
+    const now = new Date().toISOString();
+    const record: TeacherRateDoc = {
+      uid,
+      academyId: actor.academyId,
+      hourlyRate: roundMoney(hourlyRate),
+      updatedBy: actor.uid,
+      updatedAt: now,
+    };
+    await rateRef.set(record);
+
+    await writeAuditLog({
+      academyId: actor.academyId,
+      actor,
+      action: 'SET_TEACHER_RATE',
+      targetCollection: 'teacherRates',
+      targetId: uid,
+      details: { previous, next: record.hourlyRate },
+    });
+
+    res.status(200).json({ ok: true, rate: record });
+  } catch (err) {
+    handleApiError(res, err);
+  }
+}
+
+// Earnings summary: totals per teacher, per student, and every report with its duration.
+// Optional body.month = "YYYY-MM" limits the period. Owner or supervisor only.
+export async function handleGetEarningsSummary(req: ApiRequest, res: ApiResponse): Promise<void> {
+  try {
+    const actor = await authenticateActor(req);
+    assertCanViewEarnings(actor);
+
+    const month = typeof req.body?.month === 'string' && /^\d{4}-\d{2}$/.test(req.body.month) ? req.body.month : '';
+    const academy = academyRef(actor.academyId);
+
+    const [academySnap, finSnap, teachersSnap, ratesSnap, attSnap] = await Promise.all([
+      academy.get(),
+      academy.collection('sessionFinance').get(),
+      academy.collection('members').where('role', '==', 'teacher').get(),
+      academy.collection('teacherRates').get(),
+      academy.collection('attendance').get(),
+    ]);
+
+    const rates = new Map<string, number>();
+    ratesSnap.docs.forEach((d) => rates.set(d.id, Number((d.data() as TeacherRateDoc).hourlyRate) || 0));
+
+    // Students who attended each session (present or late, counted once).
+    const attendedBySession = new Map<string, Map<string, string>>();
+    attSnap.docs.forEach((d) => {
+      const a = d.data() as { sessionId: string; studentId: string; studentName: string; status: string };
+      if (!(ATTENDED_STATUSES as readonly string[]).includes(a.status)) return;
+      const bucket = attendedBySession.get(a.sessionId) || new Map<string, string>();
+      bucket.set(a.studentId, a.studentName);
+      attendedBySession.set(a.sessionId, bucket);
+    });
+
+    const reportsRaw = finSnap.docs
+      .map((d) => d.data() as SessionFinanceDoc)
+      .filter((r) => !month || r.scheduledDate.startsWith(month));
+
+    type StudentRow = { studentId: string; name: string; amount: number; sessions: number };
+    type TeacherRow = {
+      uid: string;
+      name: string;
+      status: string;
+      hourlyRate: number | null;
+      sessions: number;
+      minutes: number;
+      amount: number;
+      unassignedAmount: number;
+      students: Map<string, StudentRow>;
+    };
+
+    const teachers = new Map<string, TeacherRow>();
+    teachersSnap.docs.forEach((d) => {
+      const m = d.data() as MemberDoc;
+      teachers.set(m.uid, {
+        uid: m.uid,
+        name: m.name,
+        status: m.status,
+        hourlyRate: rates.has(m.uid) ? rates.get(m.uid) ?? null : null,
+        sessions: 0,
+        minutes: 0,
+        amount: 0,
+        unassignedAmount: 0,
+        students: new Map(),
+      });
+    });
+
+    const teacherNames = new Map<string, string>();
+    teachersSnap.docs.forEach((d) => teacherNames.set(d.id, (d.data() as MemberDoc).name));
+
+    const reports = reportsRaw.map((r) => {
+      let row = teachers.get(r.teacherUid);
+      if (!row) {
+        row = {
+          uid: r.teacherUid,
+          name: teacherNames.get(r.teacherUid) || 'معلم غير موجود',
+          status: 'disabled',
+          hourlyRate: rates.get(r.teacherUid) ?? null,
+          sessions: 0,
+          minutes: 0,
+          amount: 0,
+          unassignedAmount: 0,
+          students: new Map(),
+        };
+        teachers.set(r.teacherUid, row);
+      }
+
+      row.sessions += 1;
+      row.minutes += r.durationMinutes;
+      row.amount += r.amount;
+
+      const attended = attendedBySession.get(r.sessionId) || new Map<string, string>();
+      if (attended.size === 0) {
+        row.unassignedAmount += r.amount;
+      } else {
+        const shares = splitAmongStudents(r.amount, [...attended.keys()]);
+        for (const [studentId, share] of Object.entries(shares)) {
+          const existing = row.students.get(studentId) || {
+            studentId,
+            name: attended.get(studentId) || studentId,
+            amount: 0,
+            sessions: 0,
+          };
+          existing.amount += share;
+          existing.sessions += 1;
+          row.students.set(studentId, existing);
+        }
+      }
+
+      return {
+        sessionId: r.sessionId,
+        title: r.title,
+        groupName: r.groupName,
+        teacherUid: r.teacherUid,
+        teacherName: row.name,
+        scheduledDate: r.scheduledDate,
+        durationMinutes: r.durationMinutes,
+        hourlyRate: r.hourlyRate,
+        amount: roundMoney(r.amount),
+        attendedCount: attended.size,
+        legacy: !!r.legacy,
+      };
+    });
+
+    reports.sort((a, b) => b.scheduledDate.localeCompare(a.scheduledDate));
+
+    const teacherRows = Array.from(teachers.values())
+      .map((t) => ({
+        uid: t.uid,
+        name: t.name,
+        status: t.status,
+        hourlyRate: t.hourlyRate,
+        sessions: t.sessions,
+        minutes: t.minutes,
+        amount: roundMoney(t.amount),
+        unassignedAmount: roundMoney(t.unassignedAmount),
+        students: Array.from(t.students.values())
+          .map((s) => ({ ...s, amount: roundMoney(s.amount) }))
+          .sort((a, b) => b.amount - a.amount),
+      }))
+      .sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name, 'ar'));
+
+    const totals = {
+      sessions: reports.length,
+      minutes: reports.reduce((sum, r) => sum + r.durationMinutes, 0),
+      amount: roundMoney(reports.reduce((sum, r) => sum + r.amount, 0)),
+    };
+
+    res.status(200).json({
+      ok: true,
+      month: month || null,
+      currency: (academySnap.data() as { currency?: string } | undefined)?.currency || 'SAR',
+      totals,
+      teachers: teacherRows,
+      reports,
+    });
+  } catch (err) {
+    handleApiError(res, err);
+  }
+}
+
+// Creates earnings records for completed sessions recorded before this feature existed.
+// They use the teacher's current rate and are flagged as legacy.
+export async function handleBackfillSessionFinance(req: ApiRequest, res: ApiResponse): Promise<void> {
+  try {
+    const actor = await authenticateActor(req);
+    assertCanViewEarnings(actor);
+
+    const academy = academyRef(actor.academyId);
+    const [sessionsSnap, finSnap, ratesSnap] = await Promise.all([
+      academy.collection('sessions').get(),
+      academy.collection('sessionFinance').get(),
+      academy.collection('teacherRates').get(),
+    ]);
+
+    const existing = new Set(finSnap.docs.map((d) => d.id));
+    const rates = new Map<string, number>();
+    ratesSnap.docs.forEach((d) => rates.set(d.id, Number((d.data() as TeacherRateDoc).hourlyRate) || 0));
+
+    const now = new Date().toISOString();
+    const missing = sessionsSnap.docs
+      .map((d) => d.data() as { id: string; status: string; teacherUid: string; groupId: string; groupName: string; title: string; scheduledDate: string; durationMinutes: number })
+      .filter((s) => s.status === 'completed' && !existing.has(s.id));
+
+    let created = 0;
+    for (let i = 0; i < missing.length; i += 400) {
+      const batch = adminDb.batch();
+      for (const s of missing.slice(i, i + 400)) {
+        const hourlyRate = rates.has(s.teacherUid) ? rates.get(s.teacherUid) ?? null : null;
+        const finance: SessionFinanceDoc = {
+          id: s.id,
+          academyId: actor.academyId,
+          sessionId: s.id,
+          teacherUid: s.teacherUid,
+          groupId: s.groupId,
+          groupName: s.groupName,
+          title: s.title,
+          scheduledDate: s.scheduledDate,
+          durationMinutes: s.durationMinutes,
+          hourlyRate,
+          amount: calcSessionAmount(hourlyRate, s.durationMinutes),
+          legacy: true,
+          createdAt: now,
+        };
+        batch.set(academy.collection('sessionFinance').doc(s.id), finance);
+        created += 1;
+      }
+      await batch.commit();
+    }
+
+    if (created > 0) {
+      await writeAuditLog({
+        academyId: actor.academyId,
+        actor,
+        action: 'BACKFILL_SESSION_FINANCE',
+        targetCollection: 'sessionFinance',
+        targetId: actor.academyId,
+        details: { created },
+      });
+    }
+
+    res.status(200).json({ ok: true, created });
   } catch (err) {
     handleApiError(res, err);
   }

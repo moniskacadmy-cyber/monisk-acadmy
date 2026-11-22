@@ -1,74 +1,15 @@
-import {
-  handleArchiveGroup,
-  handleArchiveStudent,
-  handleCreateConversation,
-  handleCreateInvoice,
-  handleCreateMember,
-  handleCreateOrUpdateGroup,
-  handleCreatePayroll,
-  handleDisableMember,
-  handleLinkParentToStudent,
-  handleRecordPayment,
-  handleRecordSession,
-  handleRegisterResource,
-  handleSendNotification,
-  handleUpdatePermissions,
-  handleUpsertLead,
-  handleUpsertStudent,
-} from '../src/server/handlers';
-import type { ApiRequest, ApiResponse } from '../src/server/authMiddleware';
+// Vercel catch-all function. Every request to /api/* lands here.
+// Routing is delegated to src/server/apiRouter.ts so this file and server.ts
+// always expose exactly the same endpoints.
 
-interface VercelRequest extends ApiRequest {
-  url?: string;
-}
+import { dispatchApi, type RoutableRequest } from '../src/server/apiRouter';
+import type { ApiResponse } from '../src/server/authMiddleware';
 
-export default async function handler(req: VercelRequest, res: ApiResponse): Promise<void> {
-  const pathPart = (req.url || '').split('?')[0].replace(/^\/api\/?/, '');
-
-  if (req.method === 'GET' && pathPart === 'health') {
-    res.status(200).json({ ok: true, service: 'منصة الأكاديميات (Vercel)' });
-    return;
-  }
-
-  if (req.method !== 'POST') {
-    res.status(405).json({ ok: false, error: 'Method Not Allowed' });
-    return;
-  }
-
-  switch (pathPart) {
-    case 'members/create':
-      return handleCreateMember(req, res);
-    case 'members/disable':
-      return handleDisableMember(req, res);
-    case 'members/permissions':
-      return handleUpdatePermissions(req, res);
-    case 'students/upsert':
-      return handleUpsertStudent(req, res);
-    case 'students/archive':
-      return handleArchiveStudent(req, res);
-    case 'groups/upsert':
-      return handleCreateOrUpdateGroup(req, res);
-    case 'groups/archive':
-      return handleArchiveGroup(req, res);
-    case 'parent-links/link':
-      return handleLinkParentToStudent(req, res);
-    case 'sessions/record':
-      return handleRecordSession(req, res);
-    case 'finance/invoice':
-      return handleCreateInvoice(req, res);
-    case 'finance/payment':
-      return handleRecordPayment(req, res);
-    case 'finance/payroll':
-      return handleCreatePayroll(req, res);
-    case 'crm/lead':
-      return handleUpsertLead(req, res);
-    case 'conversations/create':
-      return handleCreateConversation(req, res);
-    case 'notifications/send':
-      return handleSendNotification(req, res);
-    case 'resources/register':
-      return handleRegisterResource(req, res);
-    default:
-      res.status(404).json({ ok: false, error: 'نقطة النهاية غير موجودة.' });
+export default async function handler(req: RoutableRequest, res: ApiResponse): Promise<void> {
+  try {
+    await dispatchApi(req, res);
+  } catch (err) {
+    console.error('[API] Unhandled error in dispatcher:', err);
+    res.status(500).json({ ok: false, code: 'INTERNAL_ERROR', error: 'حدث خطأ غير متوقع في الخادم.' });
   }
 }

@@ -159,66 +159,6 @@
       },
       "required": ["academyId", "parentUid", "studentId", "studentUserId", "status", "approvedBy", "createdAt", "updatedAt"]
     },
-    "Invoice": {
-      "title": "Invoice",
-      "description": "Tuition invoice visible to finance admins and linked parents.",
-      "type": "object",
-      "properties": {
-        "academyId": { "type": "string", "maxLength": 128 },
-        "studentId": { "type": "string", "maxLength": 128 },
-        "studentName": { "type": "string", "maxLength": 120 },
-        "parentUids": { "type": "array" },
-        "title": { "type": "string", "maxLength": 160 },
-        "amount": { "type": "number" },
-        "paidAmount": { "type": "number" },
-        "currency": { "type": "string", "maxLength": 12 },
-        "dueDate": { "type": "string", "maxLength": 40 },
-        "status": { "type": "string", "enum": ["pending", "partial", "paid", "overdue", "cancelled"] },
-        "createdBy": { "type": "string", "maxLength": 128 },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["academyId", "studentId", "parentUids", "title", "amount", "paidAmount", "currency", "dueDate", "status", "createdBy", "createdAt", "updatedAt"]
-    },
-    "Payment": {
-      "title": "Payment",
-      "description": "Recorded tuition payment transaction.",
-      "type": "object",
-      "properties": {
-        "academyId": { "type": "string", "maxLength": 128 },
-        "invoiceId": { "type": "string", "maxLength": 128 },
-        "studentId": { "type": "string", "maxLength": 128 },
-        "amount": { "type": "number" },
-        "currency": { "type": "string", "maxLength": 12 },
-        "method": { "type": "string", "enum": ["cash", "bank_transfer", "card", "online"] },
-        "recordedBy": { "type": "string", "maxLength": 128 },
-        "paidAt": { "type": "string", "maxLength": 40 },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["academyId", "invoiceId", "studentId", "amount", "currency", "method", "recordedBy", "paidAt", "createdAt"]
-    },
-    "Payroll": {
-      "title": "Payroll",
-      "description": "Staff/teacher payroll record strictly restricted to owner or payroll supervisor.",
-      "type": "object",
-      "properties": {
-        "academyId": { "type": "string", "maxLength": 128 },
-        "memberUid": { "type": "string", "maxLength": 128 },
-        "memberName": { "type": "string", "maxLength": 120 },
-        "role": { "type": "string" },
-        "periodMonth": { "type": "string", "maxLength": 20 },
-        "baseAmount": { "type": "number" },
-        "bonusAmount": { "type": "number" },
-        "deductionAmount": { "type": "number" },
-        "netAmount": { "type": "number" },
-        "currency": { "type": "string", "maxLength": 12 },
-        "status": { "type": "string", "enum": ["draft", "approved", "paid"] },
-        "createdBy": { "type": "string", "maxLength": 128 },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["academyId", "memberUid", "periodMonth", "netAmount", "currency", "status", "createdBy", "createdAt", "updatedAt"]
-    },
     "Lead": {
       "title": "Lead",
       "description": "CRM enrollment inquiry lead.",
@@ -265,13 +205,15 @@
         "lastMessageText": { "type": "string", "maxLength": 500 },
         "lastMessageAt": { "type": "string", "maxLength": 40 },
         "createdBy": { "type": "string", "maxLength": 128 },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "kind": { "type": "string", "enum": ["direct", "group"] },
+        "lastReadAt": { "type": "object", "description": "uid -> ISO timestamp of last read" }
       },
       "required": ["academyId", "title", "participantUids", "createdBy", "createdAt"]
     },
     "Message": {
       "title": "Message",
-      "description": "Message inside a scoped academy conversation.",
+      "description": "Written only by the server via /api/conversations/send.",
       "type": "object",
       "properties": {
         "academyId": { "type": "string", "maxLength": 128 },
@@ -293,7 +235,7 @@
         "recipientUids": { "type": "array" },
         "title": { "type": "string", "maxLength": 160 },
         "body": { "type": "string", "maxLength": 600 },
-        "category": { "type": "string", "enum": ["session", "evaluation", "finance", "system", "message"] },
+        "category": { "type": "string", "enum": ["session", "evaluation", "system", "message"] },
         "createdBy": { "type": "string", "maxLength": 128 },
         "readBy": { "type": "array" },
         "createdAt": { "type": "string", "format": "date-time" }
@@ -311,13 +253,49 @@
         "title": { "type": "string", "maxLength": 160 },
         "fileName": { "type": "string", "maxLength": 200 },
         "storagePath": { "type": "string", "maxLength": 400 },
-        "downloadUrl": { "type": "string", "maxLength": 1000 },
         "sizeBytes": { "type": "number" },
         "contentType": { "type": "string", "maxLength": 120 },
         "uploadedBy": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["academyId", "groupId", "teacherUid", "title", "fileName", "storagePath", "downloadUrl", "uploadedBy", "createdAt"]
+      "required": ["academyId", "groupId", "teacherUid", "title", "fileName", "storagePath", "uploadedBy", "createdAt"]
+    },
+    "TeacherRate": {
+      "title": "TeacherRate",
+      "description": "Hourly teaching rate configured by owner/supervisor for a teacher.",
+      "type": "object",
+      "properties": {
+        "academyId": { "type": "string", "maxLength": 128 },
+        "teacherUid": { "type": "string", "maxLength": 128 },
+        "teacherName": { "type": "string", "maxLength": 120 },
+        "hourlyRate": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 12 },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["academyId", "teacherUid", "hourlyRate", "currency", "updatedBy", "updatedAt"]
+    },
+    "SessionFinance": {
+      "title": "SessionFinance",
+      "description": "Computed teacher earning snapshot recorded on completed sessions.",
+      "type": "object",
+      "properties": {
+        "academyId": { "type": "string", "maxLength": 128 },
+        "sessionId": { "type": "string", "maxLength": 128 },
+        "teacherUid": { "type": "string", "maxLength": 128 },
+        "teacherName": { "type": "string", "maxLength": 120 },
+        "groupId": { "type": "string", "maxLength": 128 },
+        "groupName": { "type": "string", "maxLength": 120 },
+        "durationMinutes": { "type": "number" },
+        "hourlyRate": { "type": "number" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 12 },
+        "scheduledDate": { "type": "string", "maxLength": 40 },
+        "monthKey": { "type": "string", "maxLength": 7 },
+        "rateMissing": { "type": "boolean" },
+        "computedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["academyId", "sessionId", "teacherUid", "durationMinutes", "hourlyRate", "amount", "currency", "scheduledDate", "monthKey", "computedAt"]
     },
     "FcmToken": {
       "title": "FcmToken",
@@ -365,21 +343,17 @@
       "schema": { "$ref": "#/entities/ParentLink" },
       "description": "Admin-approved parent-student links."
     },
-    "/academies/{academyId}/invoices/{invoiceId}": {
-      "schema": { "$ref": "#/entities/Invoice" },
-      "description": "Student fee invoices."
-    },
-    "/academies/{academyId}/payments/{paymentId}": {
-      "schema": { "$ref": "#/entities/Payment" },
-      "description": "Payment receipts."
-    },
-    "/academies/{academyId}/payroll/{payrollId}": {
-      "schema": { "$ref": "#/entities/Payroll" },
-      "description": "Staff and teacher payroll records."
-    },
     "/academies/{academyId}/leads/{leadId}": {
       "schema": { "$ref": "#/entities/Lead" },
       "description": "Enrollment CRM leads."
+    },
+    "/academies/{academyId}/teacherRates/{uid}": {
+      "schema": { "$ref": "#/entities/TeacherRate" },
+      "description": "Teacher hourly rates restricted to owner and supervisors."
+    },
+    "/academies/{academyId}/sessionFinance/{sessionId}": {
+      "schema": { "$ref": "#/entities/SessionFinance" },
+      "description": "Session teacher earnings snapshots restricted to owner and supervisors."
     },
     "/academies/{academyId}/auditLogs/{logId}": {
       "schema": { "$ref": "#/entities/AuditLog" },
@@ -391,7 +365,7 @@
     },
     "/academies/{academyId}/conversations/{conversationId}/messages/{messageId}": {
       "schema": { "$ref": "#/entities/Message" },
-      "description": "Conversation messages."
+      "description": "Chat messages. Read by participants; written only by the server."
     },
     "/academies/{academyId}/notifications/{notificationId}": {
       "schema": { "$ref": "#/entities/Notification" },

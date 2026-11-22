@@ -5,14 +5,14 @@ import {
   PolicyError,
   assertAcademyIsolation,
   assertActiveActor,
-  assertCanAccessFinance,
-  assertCanAccessPayroll,
   assertCanCreateMember,
   assertCanLinkParent,
   assertCanToggleMemberStatus,
   assertCanUpdatePermissions,
   canReadStudentRecord,
+  sanitizePermissions,
 } from '../src/shared/policy';
+import { ALL_SUPERVISOR_PERMISSIONS } from '../src/shared/types';
 import type { ActorContext, StudentDoc } from '../src/shared/types';
 
 const ownerAcad1: ActorContext = {
@@ -20,7 +20,7 @@ const ownerAcad1: ActorContext = {
   email: 'owner@acad1.com',
   academyId: 'acad_1',
   role: 'owner',
-  perms: ['students', 'teachers', 'groups', 'supervisors', 'parents', 'finance', 'payroll', 'crm', 'reports'],
+  perms: ['students', 'teachers', 'groups', 'supervisors', 'parents', 'crm', 'reports'],
   status: 'active',
 };
 
@@ -149,11 +149,10 @@ describe('Mandatory RBAC & Tenant Isolation Policy Suite', () => {
     expect(canReadStudentRecord(ownerAcad1, studentInAcad2)).toBe(false);
   });
 
-  it('9. Supervisor without explicit finance/payroll delegation is blocked from finance & payroll', () => {
-    expect(() => assertCanAccessFinance(supervisorNoFinance)).toThrowError(PolicyError);
-    expect(() => assertCanAccessPayroll(supervisorNoFinance)).toThrowError(PolicyError);
-    expect(() => assertCanAccessFinance(ownerAcad1)).not.toThrow();
-    expect(() => assertCanAccessPayroll(ownerAcad1)).not.toThrow();
+  it('9. Finance and payroll permissions no longer exist and are stripped from any stored perms', () => {
+    expect(sanitizePermissions(['finance', 'payroll', 'students'])).toEqual(['students']);
+    expect(ALL_SUPERVISOR_PERMISSIONS).not.toContain('finance');
+    expect(ALL_SUPERVISOR_PERMISSIONS).not.toContain('payroll');
   });
 
   it('10. Only Owner can update supervisor permissions or protect owner from disablement', () => {
@@ -178,7 +177,12 @@ describe('Firestore & Storage Rules Static Hardening Verification', () => {
     expect(rulesText).toContain('match /members/{uid}');
     expect(rulesText).toContain('match /parentLinks/{linkId}');
     expect(rulesText).toContain('match /auditLogs/{logId}');
-    expect(rulesText).toContain('match /payroll/{payrollId}');
+    expect(rulesText).toContain('match /messages/{messageId}');
+    expect(rulesText).toContain('match /teacherRates/{uid}');
+    expect(rulesText).toContain('match /sessionFinance/{sessionId}');
+    expect(rulesText).not.toContain('/payroll/');
+    expect(rulesText).not.toContain('/invoices/');
+    expect(rulesText).not.toContain('/payments/');
     expect(rulesText).toContain('request.auth.token.academyId == academyId');
     expect(rulesText).toContain('request.auth.uid in existing().teacherUids');
     expect(rulesText).toContain('existing().userId == request.auth.uid');

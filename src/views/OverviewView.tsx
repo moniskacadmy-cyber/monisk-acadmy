@@ -1,14 +1,12 @@
-import { Award, BookOpen, Calendar, CreditCard, ShieldCheck, Users } from 'lucide-react';
+import { BookOpen, Calendar, MessageSquare, ShieldCheck, Users } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import type { AcademyDataState } from '../hooks/useAcademyData';
 import type { NavTabId } from '../components/AppShell';
 import {
   ATTENDANCE_LABELS,
   ROLE_LABELS,
-  formatCurrency,
   formatDateArabic,
 } from '../shared/labels';
-import { hasSupervisorPerm } from '../shared/policy';
 
 interface OverviewViewProps {
   data: AcademyDataState;
@@ -21,10 +19,12 @@ export function OverviewView({ data, onNavigate }: OverviewViewProps) {
 
   const activeStudents = data.students.filter((s) => s.status === 'active');
   const activeGroups = data.groups.filter((g) => g.status === 'active');
-  const totalInvoices = data.invoices.reduce((sum, inv) => sum + (inv.amount || 0), 0);
-  const totalPaid = data.invoices.reduce((sum, inv) => sum + (inv.paidAmount || 0), 0);
-
-  const canSeeFinance = actor.role === 'owner' || hasSupervisorPerm(actor, 'finance');
+  const unreadChats = data.conversations.filter(
+    (c) =>
+      !!c.lastMessageAt &&
+      c.lastMessageSenderUid !== actor.uid &&
+      (c.lastReadAt?.[actor.uid] ?? '') < c.lastMessageAt
+  ).length;
 
   if (data.loading) {
     return (
@@ -52,7 +52,7 @@ export function OverviewView({ data, onNavigate }: OverviewViewProps) {
               مرحبًا بك في لوحة التحكم
             </h2>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-              {actor.role === 'owner' && 'لديك صلاحية كاملة لإدارة الأعضاء والمالية والرواتب وسجل التدقيق.'}
+              {actor.role === 'owner' && 'لديك صلاحية كاملة لإدارة الأعضاء والمستحقات والتقارير وسجل التدقيق.'}
               {actor.role === 'supervisor' && 'تعرض هذه اللوحة الأقسام المفوضة لك فقط من مدير الأكاديمية.'}
               {actor.role === 'teacher' && 'تظهر هنا حلقاتك وطلابك المسندون إليك وسجلات الحضور والتقييم فقط.'}
               {actor.role === 'student' && 'تظهر هنا حلقاتك وسجل حضورك وتقييماتك ونقاطك الخاصة فقط.'}
@@ -114,18 +114,12 @@ export function OverviewView({ data, onNavigate }: OverviewViewProps) {
         <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
             <span className="text-xs font-medium">
-              {canSeeFinance ? 'التحصيل المالي' : 'التقييمات المسجلة'}
+              المحادثات غير المقروءة
             </span>
-            {canSeeFinance ? (
-              <CreditCard className="h-4 w-4 text-teal-700 dark:text-teal-400" />
-            ) : (
-              <Award className="h-4 w-4 text-teal-700 dark:text-teal-400" />
-            )}
+            <MessageSquare className="h-4 w-4 text-teal-700 dark:text-teal-400" />
           </div>
           <p className="mt-3 font-display text-2xl font-bold text-slate-900 tabular-nums dark:text-white">
-            {canSeeFinance
-              ? `${formatCurrency(totalPaid, academy?.currency)} / ${formatCurrency(totalInvoices, academy?.currency)}`
-              : data.evaluations.length}
+            {unreadChats}
           </p>
         </div>
       </section>

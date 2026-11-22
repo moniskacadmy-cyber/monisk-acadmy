@@ -4,6 +4,10 @@ import fs from 'fs';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+// The API is served by server.ts on this port. When Vite runs alone
+// (vite / vite preview), /api requests are forwarded there instead of hitting Vite itself.
+const API_TARGET = `http://localhost:${process.env.PORT || 3000}`;
+
 export default defineConfig(() => {
   return {
     plugins: [
@@ -42,6 +46,14 @@ export default defineConfig(() => {
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      proxy: {
+        '/api': {target: API_TARGET, changeOrigin: true},
+      },
+    },
+    preview: {
+      proxy: {
+        '/api': {target: API_TARGET, changeOrigin: true},
+      },
     },
   };
 });

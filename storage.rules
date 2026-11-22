@@ -1,11 +1,13 @@
 rules_version = '2';
 
+// Storage rules for educational files.
+// Files live under academies/{academyId}/resources/{resourceId}/{fileName}.
+// Reads are checked against the resource's access list in Firestore
+// (teacher, students and parents copied from the group when it was uploaded).
+// Nothing else in Storage is readable or writable.
+
 service firebase.storage {
   match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read, write: if false;
-    }
-
     function isActiveAcademyUser(academyId) {
       return request.auth != null
         && request.auth.token.email_verified == true
@@ -18,22 +20,35 @@ service firebase.storage {
         && request.auth.token.role in ['owner', 'supervisor', 'teacher'];
     }
 
-    // Educational files scoped by academyId and groupId
-    match /academies/{academyId}/groups/{groupId}/{fileName} {
-      allow read: if isActiveAcademyUser(academyId);
+    function canReadResource(academyId, resourceId) {
+      return firestore.exists(/databases/(default)/documents/academies/$(academyId)/resources/$(resourceId))
+        && (
+          request.auth.token.role in ['owner', 'supervisor']
+          || (
+            firestore.get(/databases/(default)/documents/academies/$(academyId)/resources/$(resourceId)).data.teacherUid == request.auth.uid
+          )
+          || (
+            firestore.get(/databases/(default)/documents/academies/$(academyId)/resources/$(resourceId)).data.studentUserIds is list
+            && request.auth.uid in firestore.get(/databases/(default)/documents/academies/$(academyId)/resources/$(resourceId)).data.studentUserIds
+          )
+          || (
+            firestore.get(/databases/(default)/documents/academies/$(academyId)/resources/$(resourceId)).data.parentUids is list
+            && request.auth.uid in firestore.get(/databases/(default)/documents/academies/$(academyId)/resources/$(resourceId)).data.parentUids
+          )
+        );
+    }
+
+    match /academies/{academyId}/resources/{resourceId}/{fileName} {
+      allow read: if isActiveAcademyUser(academyId) && canReadResource(academyId, resourceId);
       allow write: if isStaffOrOwner(academyId)
         && request.resource != null
         && request.resource.size < 15 * 1024 * 1024
         && request.resource.contentType.matches('application/pdf|image/.*|audio/.*|text/plain');
     }
 
-    // Chat attachments scoped by academyId and conversationId
-    match /academies/{academyId}/conversations/{conversationId}/{fileName} {
-      allow read: if isActiveAcademyUser(academyId);
-      allow write: if isActiveAcademyUser(academyId)
-        && request.resource != null
-        && request.resource.size < 10 * 1024 * 1024
-        && request.resource.contentType.matches('application/pdf|image/.*|audio/.*');
+    // Everything else is denied.
+    match /{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }

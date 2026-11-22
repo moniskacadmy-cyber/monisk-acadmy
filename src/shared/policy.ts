@@ -194,20 +194,6 @@ export function assertCanLinkParent(actor: ActorContext): void {
   }
 }
 
-export function assertCanAccessFinance(actor: ActorContext): void {
-  assertActiveActor(actor);
-  if (!hasSupervisorPerm(actor, 'finance')) {
-    throw new PolicyError('الوصول إلى المالية يتطلب صلاحية المدير أو تفويضًا صريحًا.', 403, 'FINANCE_FORBIDDEN');
-  }
-}
-
-export function assertCanAccessPayroll(actor: ActorContext): void {
-  assertActiveActor(actor);
-  if (!hasSupervisorPerm(actor, 'payroll')) {
-    throw new PolicyError('الوصول إلى الرواتب يتطلب صلاحية المدير أو تفويضًا صريحًا.', 403, 'PAYROLL_FORBIDDEN');
-  }
-}
-
 export function assertCanAccessCrm(actor: ActorContext): void {
   assertActiveActor(actor);
   if (!hasSupervisorPerm(actor, 'crm')) {
@@ -238,4 +224,16 @@ export function canReadStudentRecord(actor: ActorContext, student: StudentDoc): 
     return student.parentUids.includes(actor.uid);
   }
   return false;
+}
+
+// Earnings: owner and supervisors only. Teachers, students and parents never see rates or totals.
+export function assertCanViewEarnings(actor: ActorContext): void {
+  assertActiveActor(actor);
+  if (actor.role !== 'owner' && actor.role !== 'supervisor') {
+    throw new PolicyError('عرض المستحقات متاح للمدير والمشرفين فقط.', 403, 'EARNINGS_FORBIDDEN');
+  }
+}
+
+export function assertCanSetTeacherRate(actor: ActorContext): void {
+  assertCanViewEarnings(actor);
 }

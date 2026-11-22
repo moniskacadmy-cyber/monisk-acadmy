@@ -6,8 +6,6 @@ export type SupervisorPermission =
   | 'groups'
   | 'supervisors'
   | 'parents'
-  | 'finance'
-  | 'payroll'
   | 'crm'
   | 'reports';
 
@@ -17,8 +15,6 @@ export const ALL_SUPERVISOR_PERMISSIONS: SupervisorPermission[] = [
   'groups',
   'supervisors',
   'parents',
-  'finance',
-  'payroll',
   'crm',
   'reports',
 ];
@@ -173,57 +169,6 @@ export interface ParentLinkDoc {
   updatedAt: string;
 }
 
-export interface InvoiceDoc {
-  id: string;
-  academyId: string;
-  studentId: string;
-  studentName: string;
-  parentUids: string[];
-  title: string;
-  amount: number;
-  paidAmount: number;
-  currency: string;
-  dueDate: string;
-  status: 'pending' | 'partial' | 'paid' | 'overdue' | 'cancelled';
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface PaymentDoc {
-  id: string;
-  academyId: string;
-  invoiceId: string;
-  studentId: string;
-  studentName: string;
-  amount: number;
-  currency: string;
-  method: 'cash' | 'bank_transfer' | 'card' | 'online';
-  reference?: string;
-  recordedBy: string;
-  paidAt: string;
-  createdAt: string;
-}
-
-export interface PayrollDoc {
-  id: string;
-  academyId: string;
-  memberUid: string;
-  memberName: string;
-  role: AcademyRole;
-  periodMonth: string;
-  baseAmount: number;
-  bonusAmount: number;
-  deductionAmount: number;
-  netAmount: number;
-  currency: string;
-  status: 'draft' | 'approved' | 'paid';
-  notes?: string;
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface LeadDoc {
   id: string;
   academyId: string;
@@ -253,14 +198,22 @@ export interface AuditLogDoc {
   createdAt: string;
 }
 
+export type ConversationKind = 'direct' | 'group';
+
 export interface ConversationDoc {
   id: string;
   academyId: string;
+  kind: ConversationKind;
   title: string;
   participantUids: string[];
+  /** Display names only. Phone numbers are never stored in conversations. */
   participantNames: Record<string, string>;
+  /** Per-user timestamp of the last time they read the conversation (ISO). */
+  lastReadAt: Record<string, string>;
   lastMessageText: string;
   lastMessageAt: string;
+  lastMessageSenderUid: string;
+  lastMessageSenderName: string;
   createdBy: string;
   createdAt: string;
 }
@@ -269,13 +222,11 @@ export interface MessageDoc {
   id: string;
   academyId: string;
   conversationId: string;
-  participantUids?: string[];
+  participantUids: string[];
   senderUid: string;
   senderName: string;
   senderRole: AcademyRole;
   text: string;
-  attachmentUrl?: string;
-  attachmentName?: string;
   createdAt: string;
 }
 
@@ -285,7 +236,7 @@ export interface NotificationDoc {
   recipientUids: string[];
   title: string;
   body: string;
-  category: 'session' | 'evaluation' | 'finance' | 'system' | 'message';
+  category: 'session' | 'evaluation' | 'system' | 'message';
   createdBy: string;
   readBy: string[];
   createdAt: string;
@@ -301,7 +252,6 @@ export interface ResourceFileDoc {
   title: string;
   fileName: string;
   storagePath: string;
-  downloadUrl: string;
   sizeBytes: number;
   contentType: string;
   uploadedBy: string;

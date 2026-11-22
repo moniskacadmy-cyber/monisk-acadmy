@@ -14,8 +14,6 @@ export const PERMISSION_LABELS: Record<SupervisorPermission, string> = {
   groups: 'إدارة الحلقات والمجموعات',
   supervisors: 'إنشاء وإدارة المشرفين',
   parents: 'ربط أولياء الأمور',
-  finance: 'المالية والفواتير والمدفوعات',
-  payroll: 'الرواتب والمستحقات',
   crm: 'إدارة المسجلين الجدد (CRM)',
   reports: 'التقارير الشاملة',
 };
@@ -35,14 +33,6 @@ export const LEAD_STAGE_LABELS: Record<string, string> = {
   lost: 'غير مهتم',
 };
 
-export const INVOICE_STATUS_LABELS: Record<string, string> = {
-  pending: 'قيد الانتظار',
-  partial: 'مدفوعة جزئيًا',
-  paid: 'مدفوعة بالكامل',
-  overdue: 'متأخرة',
-  cancelled: 'ملغاة',
-};
-
 export function formatDateArabic(iso?: string): string {
   if (!iso) return '—';
   try {
@@ -54,11 +44,4 @@ export function formatDateArabic(iso?: string): string {
   } catch {
     return iso.slice(0, 10);
   }
-}
-
-export function formatCurrency(amount: number, currency = 'SAR'): string {
-  return `${Number(amount || 0).toLocaleString('en-US', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  })} ${currency}`;
 }

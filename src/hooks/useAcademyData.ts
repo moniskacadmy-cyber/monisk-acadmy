@@ -18,13 +18,10 @@ import type {
   ConversationDoc,
   EvaluationDoc,
   GroupDoc,
-  InvoiceDoc,
   LeadDoc,
   MemberDoc,
   NotificationDoc,
   ParentLinkDoc,
-  PaymentDoc,
-  PayrollDoc,
   ResourceFileDoc,
   SessionDoc,
   StudentDoc,
@@ -39,9 +36,6 @@ export interface AcademyDataState {
   attendance: AttendanceDoc[];
   evaluations: EvaluationDoc[];
   parentLinks: ParentLinkDoc[];
-  invoices: InvoiceDoc[];
-  payments: PaymentDoc[];
-  payroll: PayrollDoc[];
   leads: LeadDoc[];
   auditLogs: AuditLogDoc[];
   conversations: ConversationDoc[];
@@ -58,9 +52,6 @@ const EMPTY_STATE: AcademyDataState = {
   attendance: [],
   evaluations: [],
   parentLinks: [],
-  invoices: [],
-  payments: [],
-  payroll: [],
   leads: [],
   auditLogs: [],
   conversations: [],
@@ -105,8 +96,7 @@ export function useAcademyData(actor: ActorContext | null): AcademyDataState {
       hasSupervisorPerm(actor, 'supervisors') ||
       hasSupervisorPerm(actor, 'teachers') ||
       hasSupervisorPerm(actor, 'students') ||
-      hasSupervisorPerm(actor, 'parents') ||
-      hasSupervisorPerm(actor, 'payroll');
+      hasSupervisorPerm(actor, 'parents');
 
     if (canSeeMembers) {
       listen<MemberDoc>(query(base('members'), orderBy('createdAt', 'desc')), 'members', 'members');
@@ -282,35 +272,6 @@ export function useAcademyData(actor: ActorContext | null): AcademyDataState {
         query(base('parentLinks'), where('parentUid', '==', actor.uid)),
         'parentLinks',
         'parentLinks'
-      );
-    }
-
-    // Finance (Invoices & Payments)
-    if (hasSupervisorPerm(actor, 'finance')) {
-      listen<InvoiceDoc>(
-        query(base('invoices'), orderBy('createdAt', 'desc')),
-        'invoices',
-        'invoices'
-      );
-      listen<PaymentDoc>(
-        query(base('payments'), orderBy('createdAt', 'desc')),
-        'payments',
-        'payments'
-      );
-    } else if (actor.role === 'parent') {
-      listen<InvoiceDoc>(
-        query(base('invoices'), where('parentUids', 'array-contains', actor.uid)),
-        'invoices',
-        'invoices'
-      );
-    }
-
-    // Payroll (Owner or Payroll Supervisor ONLY)
-    if (hasSupervisorPerm(actor, 'payroll')) {
-      listen<PayrollDoc>(
-        query(base('payroll'), orderBy('createdAt', 'desc')),
-        'payroll',
-        'payroll'
       );
     }
 

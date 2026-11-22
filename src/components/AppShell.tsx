@@ -3,7 +3,7 @@ import {
   Bell,
   BookOpen,
   CalendarCheck,
-  CreditCard,
+  FolderOpen,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -13,6 +13,7 @@ import {
   Sun,
   TrendingUp,
   Users,
+  Wallet,
   X,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -28,8 +29,9 @@ export type NavTabId =
   | 'members'
   | 'students_groups'
   | 'sessions_evals'
-  | 'finance_payroll'
   | 'crm_audit'
+  | 'chat'
+  | 'earnings'
   | 'comms_resources';
 
 interface NavItem {
@@ -72,11 +74,7 @@ export function AppShell({
     hasSupervisorPerm(actor, 'students') ||
     hasSupervisorPerm(actor, 'groups');
 
-  const canFinanceOrPayroll =
-    actor.role === 'owner' ||
-    actor.role === 'parent' ||
-    hasSupervisorPerm(actor, 'finance') ||
-    hasSupervisorPerm(actor, 'payroll');
+  const canEarnings = actor.role === 'owner' || actor.role === 'supervisor';
 
   const canCrmOrAudit = actor.role === 'owner' || hasSupervisorPerm(actor, 'crm');
 
@@ -99,21 +97,27 @@ export function AppShell({
       visible: true,
     },
     {
-      id: 'finance_payroll',
-      label: actor.role === 'parent' ? 'الفواتير' : 'المالية والرواتب',
-      icon: CreditCard,
-      visible: canFinanceOrPayroll,
-    },
-    {
       id: 'crm_audit',
       label: actor.role === 'owner' ? 'CRM وسجل التدقيق' : 'طلبات التسجيل CRM',
       icon: actor.role === 'owner' ? ShieldCheck : TrendingUp,
       visible: canCrmOrAudit,
     },
     {
-      id: 'comms_resources',
-      label: 'المحادثات والملفات',
+      id: 'earnings',
+      label: 'المستحقات والتقارير',
+      icon: Wallet,
+      visible: canEarnings,
+    },
+    {
+      id: 'chat',
+      label: 'المحادثات',
       icon: MessageSquare,
+      visible: true,
+    },
+    {
+      id: 'comms_resources',
+      label: 'الملفات والإشعارات',
+      icon: FolderOpen,
       visible: true,
     },
   ];

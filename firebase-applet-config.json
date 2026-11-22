@@ -3,10 +3,10 @@
   "appId": "1:60873146691:web:d8a8dc6b292530fbbdaff6",
   "apiKey": "AIzaSyCldjJ28rB5Zlvw0FLuckRpUGBimElAtsg",
   "authDomain": "monisakacadmies.firebaseapp.com",
-  "firestoreDatabaseId": "(default)",
+  "firestoreDatabaseId": "ai-studio-moniskacadmy-52d85f04-0793-4e7d-bdca-0993a13bc89f",
   "storageBucket": "monisakacadmies.firebasestorage.app",
   "messagingSenderId": "60873146691",
   "measurementId": "G-DT8K3Z67M2",
-  "oAuthClientId": "",
+  "oAuthClientId": "60873146691-tq5u9chfbc3bshr3gq3ohuktvlj3c68v.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

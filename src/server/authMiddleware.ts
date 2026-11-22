@@ -79,8 +79,18 @@ export async function authenticateActor(req: ApiRequest): Promise<ActorContext> 
 
   assertActiveActor(actor);
 
+  let parsedBody: Record<string, unknown> | undefined = req.body;
+  if (typeof req.body === 'string') {
+    try {
+      parsedBody = JSON.parse(req.body) as Record<string, unknown>;
+      req.body = parsedBody;
+    } catch {
+      throw new PolicyError('تنسيق بيانات الطلب غير صالح.', 400, 'INVALID_JSON_BODY');
+    }
+  }
+
   // Never trust client-supplied academyId if it differs from server-verified claims
-  assertAcademyIsolation(actor, req.body?.academyId);
+  assertAcademyIsolation(actor, parsedBody?.academyId);
 
   return actor;
 }
@@ -105,16 +115,55 @@ export function handleApiError(res: ApiResponse, err: unknown): void {
     });
     return;
   }
+  if (firebaseCode === 'auth/invalid-email') {
+    res.status(400).json({
+      ok: false,
+      code: 'INVALID_EMAIL',
+      error: 'صيغة البريد الإلكتروني غير صالحة.',
+    });
+    return;
+  }
+  if (firebaseCode === 'auth/invalid-password') {
+    res.status(400).json({
+      ok: false,
+      code: 'WEAK_PASSWORD',
+      error: 'كلمة المرور غير مطابقة لمتطلبات Firebase Auth (6 أحرف على الأقل).',
+    });
+    return;
+  }
+  if (firebaseCode === 'auth/operation-not-allowed') {
+    res.status(403).json({
+      ok: false,
+      code: 'AUTH_PROVIDER_DISABLED',
+      error: 'مزود البريد الإلكتروني وكلمة المرور غير مفعّل في Firebase Authentication.',
+    });
+    return;
+  }
+  if (
+    firebaseCode === 'auth/insufficient-permission' ||
+    firebaseCode === 'auth/internal-error' ||
+    firebaseCode === 'app/invalid-credential'
+  ) {
+    console.error('[API] Firebase Admin permission/credential error:', err);
+    res.status(403).json({
+      ok: false,
+      code: 'IAM_PERMISSION_DENIED',
+      error:
+        'تعذر وصول الخادم إلى Firebase Auth أو Firestore. تأكد من إعداد FIREBASE_CLIENT_EMAIL وFIREBASE_PRIVATE_KEY أو منح حساب الخدمة صلاحيات datastore.user وfirebaseauth.admin.',
+    });
+    return;
+  }
 
   // Full details stay in server logs; the client only gets a generic message.
   console.error('[API] Unexpected error:', err);
 
   const message = err instanceof Error ? err.message : '';
-  if (message.includes('PERMISSION_DENIED')) {
+  if (message.includes('PERMISSION_DENIED') || firebaseCode === 7) {
     res.status(403).json({
       ok: false,
       code: 'IAM_PERMISSION_DENIED',
-      error: 'تعذر وصول الخادم إلى قاعدة البيانات. تواصل مع مسؤول النظام.',
+      error:
+        'تعذر وصول الخادم إلى قاعدة البيانات. تأكد من صلاحيات حساب الخدمة (IAM) أو متغيرات Firebase Admin.',
     });
     return;
   }

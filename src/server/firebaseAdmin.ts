@@ -26,31 +26,119 @@ function loadAppletConfig(): AppletConfig {
 
 const appletConfig = loadAppletConfig();
 
+function normalizePrivateKey(rawKey?: string): string | null {
+  if (!rawKey) return null;
+
+  let candidate = rawKey.trim();
+  if (!candidate) return null;
+
+  // Strip trailing comma if copied directly from a JSON file
+  if (candidate.endsWith(',')) {
+    candidate = candidate.slice(0, -1).trim();
+  }
+
+  // Unwrap JSON-quoted string or full service account JSON object
+  if (candidate.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(candidate) as { private_key?: unknown };
+      if (typeof parsed.private_key === 'string') {
+        candidate = parsed.private_key.trim();
+      }
+    } catch {
+      // Continue with raw candidate
+    }
+  } else if (
+    (candidate.startsWith('"') && candidate.endsWith('"')) ||
+    (candidate.startsWith("'") && candidate.endsWith("'"))
+  ) {
+    try {
+      const unquoted = JSON.parse(
+        candidate.startsWith("'") ? `"${candidate.slice(1, -1).replace(/"/g, '\\"')}"` : candidate
+      );
+      if (typeof unquoted === 'string') {
+        candidate = unquoted.trim();
+      }
+    } catch {
+      candidate = candidate.slice(1, -1).trim();
+    }
+  }
+
+  // Decode base64-encoded PEM if applicable (e.g., LS0tLS1CRUdJTi...)
+  if (!candidate.includes('-----BEGIN') && /^[A-Za-z0-9+/=\s]+$/.test(candidate)) {
+    try {
+      const decoded = Buffer.from(candidate.replace(/\s+/g, ''), 'base64').toString('utf8').trim();
+      if (decoded.includes('-----BEGIN')) {
+        candidate = decoded;
+      }
+    } catch {
+      // Ignore invalid base64
+    }
+  }
+
+  // Normalize escaped newlines (including double-escaped \\n) and CRLF
+  candidate = candidate
+    .replace(/\\\\r\\\\n/g, '\n')
+    .replace(/\\\\n/g, '\n')
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\r\n/g, '\n')
+    .trim();
+
+  // Reconstruct valid 64-char PEM lines if newlines inside the key body were flattened to spaces
+  const pemMatch = candidate.match(
+    /-----BEGIN ([A-Z0-9 ]+)-----([\s\S]+?)-----END \1-----/
+  );
+  if (!pemMatch) {
+    return null;
+  }
+
+  const label = pemMatch[1];
+  const body = pemMatch[2].replace(/\s+/g, '');
+  if (!body) {
+    return null;
+  }
+
+  const wrappedBody = body.match(/.{1,64}/g)?.join('\n') || body;
+  return `-----BEGIN ${label}-----\n${wrappedBody}\n-----END ${label}-----\n`;
+}
+
 function createAdminApp(): App {
   if (getApps().length > 0) {
     return getApp();
   }
 
   const projectId = process.env.FIREBASE_PROJECT_ID || appletConfig.projectId;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL?.trim();
+  const normalizedPrivateKey = normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY);
+  const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || appletConfig.storageBucket;
 
-  if (projectId && clientEmail && privateKey) {
-    return initializeApp({
-      credential: cert({
+  if (projectId && clientEmail && normalizedPrivateKey) {
+    try {
+      return initializeApp({
+        credential: cert({
+          projectId,
+          clientEmail,
+          privateKey: normalizedPrivateKey,
+        }),
         projectId,
-        clientEmail,
-        privateKey: privateKey.replace(/\\n/g, '\n'),
-      }),
-      projectId,
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || appletConfig.storageBucket,
-    });
+        ...(storageBucket ? { storageBucket } : {}),
+      });
+    } catch (err) {
+      console.warn(
+        '[Firebase Admin] Failed to initialize with FIREBASE_PRIVATE_KEY; falling back to Application Default Credentials:',
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+  } else if (process.env.FIREBASE_PRIVATE_KEY) {
+    console.warn(
+      '[Firebase Admin] FIREBASE_PRIVATE_KEY is not a valid PEM private key; falling back to Application Default Credentials.'
+    );
   }
 
   // Application Default Credentials (AI Studio preview environment)
   return initializeApp({
     ...(projectId ? { projectId } : {}),
-    ...(appletConfig.storageBucket ? { storageBucket: appletConfig.storageBucket } : {}),
+    ...(storageBucket ? { storageBucket } : {}),
   });
 }
 

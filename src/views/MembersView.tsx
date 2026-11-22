@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link2, Shield, UserPlus, UserX, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import type { AcademyDataState } from '../hooks/useAcademyData';
@@ -33,25 +33,39 @@ export function MembersView({ data }: { data: AcademyDataState }) {
   const [editingSupervisor, setEditingSupervisor] = useState<MemberDoc | null>(null);
   const [editingPerms, setEditingPerms] = useState<SupervisorPermission[]>([]);
 
-  if (!actor) return null;
+  const allowedCreatableRoles = useMemo<AcademyRole[]>(() => {
+    if (!actor) return [];
+    const roles: AcademyRole[] = [];
+    if (actor.role === 'owner' || hasSupervisorPerm(actor, 'supervisors')) {
+      roles.push('supervisor');
+    }
+    if (actor.role === 'owner' || hasSupervisorPerm(actor, 'teachers')) {
+      roles.push('teacher');
+    }
+    if (actor.role === 'owner' || hasSupervisorPerm(actor, 'students')) {
+      roles.push('student');
+    }
+    if (
+      actor.role === 'owner' ||
+      hasSupervisorPerm(actor, 'parents') ||
+      hasSupervisorPerm(actor, 'students')
+    ) {
+      roles.push('parent');
+    }
+    return roles;
+  }, [actor]);
 
-  const allowedCreatableRoles: AcademyRole[] = [];
-  if (actor.role === 'owner' || hasSupervisorPerm(actor, 'supervisors')) {
-    allowedCreatableRoles.push('supervisor');
-  }
-  if (actor.role === 'owner' || hasSupervisorPerm(actor, 'teachers')) {
-    allowedCreatableRoles.push('teacher');
-  }
-  if (actor.role === 'owner' || hasSupervisorPerm(actor, 'students')) {
-    allowedCreatableRoles.push('student');
-  }
-  if (
-    actor.role === 'owner' ||
-    hasSupervisorPerm(actor, 'parents') ||
-    hasSupervisorPerm(actor, 'students')
-  ) {
-    allowedCreatableRoles.push('parent');
-  }
+  const effectiveRole: AcademyRole | undefined = allowedCreatableRoles.includes(role)
+    ? role
+    : allowedCreatableRoles[0];
+
+  useEffect(() => {
+    if (effectiveRole && role !== effectiveRole) {
+      setRole(effectiveRole);
+    }
+  }, [effectiveRole, role]);
+
+  if (!actor) return null;
 
   const togglePerm = (perm: SupervisorPermission, list: SupervisorPermission[], setList: (v: SupervisorPermission[]) => void) => {
     setList(list.includes(perm) ? list.filter((p) => p !== perm) : [...list, perm]);
@@ -59,23 +73,47 @@ export function MembersView({ data }: { data: AcademyDataState }) {
 
   const handleCreateMember = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!effectiveRole) {
+      setFeedback({ type: 'err', text: 'ليس لديك صلاحية لإضافة أعضاء جدد.' });
+      return;
+    }
+
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedPhone = phone.trim();
+    const trimmedTrack = track.trim() || 'القرآن الكريم';
+
+    if (trimmedName.length < 2) {
+      setFeedback({ type: 'err', text: 'يرجى إدخال الاسم الكامل (حرفان على الأقل).' });
+      return;
+    }
+    if (!trimmedEmail || !trimmedEmail.includes('@')) {
+      setFeedback({ type: 'err', text: 'يرجى إدخال بريد إلكتروني صحيح.' });
+      return;
+    }
+    if (password.length < 8) {
+      setFeedback({ type: 'err', text: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل.' });
+      return;
+    }
+
     setFeedback(null);
     setSubmitting(true);
     try {
       await callProtectedApi('/api/members/create', {
-        name,
-        email,
+        name: trimmedName,
+        email: trimmedEmail,
         password,
-        phone,
-        role,
-        perms: role === 'supervisor' ? perms : [],
-        track,
+        phone: trimmedPhone,
+        role: effectiveRole,
+        perms: effectiveRole === 'supervisor' ? perms : [],
+        track: trimmedTrack,
       });
       setFeedback({ type: 'ok', text: 'تم إنشاء الحساب وحفظه في Firebase Auth وFirestore بنجاح.' });
       setName('');
       setEmail('');
       setPassword('');
       setPhone('');
+      setTrack('القرآن الكريم');
     } catch (err) {
       setFeedback({
         type: 'err',
@@ -239,7 +277,7 @@ export function MembersView({ data }: { data: AcademyDataState }) {
                 الدور الوظيفي
               </label>
               <select
-                value={allowedCreatableRoles.includes(role) ? role : allowedCreatableRoles[0]}
+                value={effectiveRole || ''}
                 onChange={(e) => setRole(e.target.value as AcademyRole)}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
               >
@@ -264,7 +302,7 @@ export function MembersView({ data }: { data: AcademyDataState }) {
               />
             </div>
 
-            {role === 'student' && (
+            {effectiveRole === 'student' && (
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
                   المسار التعليمي
@@ -278,7 +316,7 @@ export function MembersView({ data }: { data: AcademyDataState }) {
               </div>
             )}
 
-            {role === 'supervisor' && (
+            {effectiveRole === 'supervisor' && (
               <div className="sm:col-span-2 lg:col-span-3">
                 <p className="mb-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
                   الصلاحيات المفوضة للمشرف:

@@ -78,13 +78,6 @@ export async function handleCreateMember(req: ApiRequest, res: ApiResponse): Pro
       disabled: false,
     });
 
-    await adminAuth.setCustomUserClaims(userRecord.uid, {
-      academyId: actor.academyId,
-      role,
-      perms,
-      status: 'active',
-    });
-
     const now = new Date().toISOString();
     const memberDoc: MemberDoc = {
       id: userRecord.uid,
@@ -125,16 +118,38 @@ export async function handleCreateMember(req: ApiRequest, res: ApiResponse): Pro
       batch.set(academyRef(actor.academyId).collection('students').doc(userRecord.uid), studentDoc);
     }
 
-    await batch.commit();
-
-    await writeAuditLog({
+    // Keep the audit record in the same atomic Firestore batch as the member.
+    const auditRef = academyRef(actor.academyId).collection('auditLogs').doc();
+    batch.set(auditRef, {
+      id: auditRef.id,
       academyId: actor.academyId,
-      actor,
+      actorUid: actor.uid,
+      actorEmail: actor.email,
+      actorRole: actor.role,
       action: 'CREATE_MEMBER',
       targetCollection: 'members',
       targetId: userRecord.uid,
       details: { role, perms, email },
+      createdAt: now,
     });
+
+    try {
+      await adminAuth.setCustomUserClaims(userRecord.uid, {
+        academyId: actor.academyId,
+        role,
+        perms,
+        status: 'active',
+      });
+      await batch.commit();
+    } catch (creationError) {
+      // Avoid leaving an orphaned Auth account when claims or Firestore writes fail.
+      try {
+        await adminAuth.deleteUser(userRecord.uid);
+      } catch (cleanupError) {
+        console.error('[API] Failed to clean up incomplete member account:', cleanupError);
+      }
+      throw creationError;
+    }
 
     res.status(201).json({ ok: true, member: memberDoc });
   } catch (err) {

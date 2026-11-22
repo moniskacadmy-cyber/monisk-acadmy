@@ -1,7 +1,9 @@
 name: Regenerate npm lockfile
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - fix/repair-owner-firestore-claims
 
 permissions:
   contents: write
